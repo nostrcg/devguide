@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 320">
+  <defs>
+    <linearGradient id="layer1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7C3AED;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6D28D9;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="layer2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="layer3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#A78BFA;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="layer4" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#C4B5FD;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#A78BFA;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow3" x="-5%" y="-5%" width="110%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="440" height="320" fill="#fafafa" rx="8"/>
+
+  <!-- Layer 4: Application -->
+  <g filter="url(#shadow3)">
+    <rect x="40" y="30" width="360" height="60" rx="6" fill="url(#layer1)"/>
+    <text x="220" y="55" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="15" font-weight="600">Application Layer</text>
+    <text x="220" y="75" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-family="system-ui, sans-serif" font-size="11">Clients, UIs, specific use cases</text>
+  </g>
+
+  <!-- Layer 3: NIPs -->
+  <g filter="url(#shadow3)">
+    <rect x="40" y="100" width="360" height="60" rx="6" fill="url(#layer2)"/>
+    <text x="220" y="125" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="15" font-weight="600">NIP Layer</text>
+    <text x="220" y="145" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-family="system-ui, sans-serif" font-size="11">Standardized event kinds &amp; features</text>
+  </g>
+
+  <!-- Layer 2: Core -->
+  <g filter="url(#shadow3)">
+    <rect x="40" y="170" width="360" height="60" rx="6" fill="url(#layer3)"/>
+    <text x="220" y="195" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="15" font-weight="600">Core Protocol</text>
+    <text x="220" y="215" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-family="system-ui, sans-serif" font-size="11">Events, Signatures, Filters</text>
+  </g>
+
+  <!-- Layer 1: Transport -->
+  <g filter="url(#shadow3)">
+    <rect x="40" y="240" width="360" height="60" rx="6" fill="url(#layer4)"/>
+    <text x="220" y="265" text-anchor="middle" fill="#5B21B6" font-family="system-ui, sans-serif" font-size="15" font-weight="600">Transport Layer</text>
+    <text x="220" y="285" text-anchor="middle" fill="#6D28D9" font-family="system-ui, sans-serif" font-size="11">WebSocket connections to relays</text>
+  </g>
+
+  <!-- Arrow on side -->
+  <g stroke="#9CA3AF" stroke-width="1.5" fill="none">
+    <line x1="420" y1="60" x2="420" y2="270"/>
+    <polygon points="420,60 416,70 424,70" fill="#9CA3AF"/>
+  </g>
+  <text x="430" y="170" fill="#6B7280" font-family="system-ui, sans-serif" font-size="10" transform="rotate(90,430,170)">Abstraction</text>
+</svg>

@@ -1,0 +1,177 @@
+/**
+ * Nostr Developer Guide - Custom Theme
+ * Purple/violet color scheme reflecting Nostr's brand identity
+ */
+
+:root {
+  /* Primary colors - Nostr purple palette */
+  --ifm-color-primary: #8B5CF6;
+  --ifm-color-primary-dark: #7C3AED;
+  --ifm-color-primary-darker: #6D28D9;
+  --ifm-color-primary-darkest: #5B21B6;
+  --ifm-color-primary-light: #A78BFA;
+  --ifm-color-primary-lighter: #C4B5FD;
+  --ifm-color-primary-lightest: #DDD6FE;
+
+  /* Code styling */
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(139, 92, 246, 0.1);
+
+  /* Link colors */
+  --ifm-link-color: #7C3AED;
+
+  /* Navbar */
+  --ifm-navbar-background-color: #ffffff;
+  --ifm-navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+
+  /* Footer */
+  --ifm-footer-background-color: #1e1b4b;
+
+  /* Typography */
+  --ifm-font-family-base: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', Consolas, Monaco, 'Courier New', monospace;
+}
+
+/* Dark mode */
+[data-theme='dark'] {
+  --ifm-color-primary: #A78BFA;
+  --ifm-color-primary-dark: #8B5CF6;
+  --ifm-color-primary-darker: #7C3AED;
+  --ifm-color-primary-darkest: #6D28D9;
+  --ifm-color-primary-light: #C4B5FD;
+  --ifm-color-primary-lighter: #DDD6FE;
+  --ifm-color-primary-lightest: #EDE9FE;
+
+  --docusaurus-highlighted-code-line-bg: rgba(167, 139, 250, 0.2);
+  --ifm-link-color: #A78BFA;
+  --ifm-navbar-background-color: #0f0d1a;
+  --ifm-footer-background-color: #0f0d1a;
+  --ifm-background-color: #18162c;
+}
+
+/* Hero gradient */
+.hero--primary {
+  background: linear-gradient(135deg, #7C3AED 0%, #4F46E5 50%, #2563EB 100%);
+}
+
+/* Code blocks */
+.prism-code {
+  border-radius: 8px;
+}
+
+pre code {
+  font-size: 0.9rem;
+}
+
+/* Inline code */
+code {
+  background-color: rgba(139, 92, 246, 0.1);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+[data-theme='dark'] code {
+  background-color: rgba(167, 139, 250, 0.15);
+}
+
+/* Tables */
+table {
+  display: table;
+  width: 100%;
+}
+
+table th {
+  background-color: rgba(139, 92, 246, 0.1);
+}
+
+[data-theme='dark'] table th {
+  background-color: rgba(167, 139, 250, 0.15);
+}
+
+/* Admonitions */
+.alert--info {
+  --ifm-alert-background-color: rgba(139, 92, 246, 0.1);
+  --ifm-alert-border-color: #8B5CF6;
+}
+
+.alert--warning {
+  --ifm-alert-background-color: rgba(245, 158, 11, 0.1);
+}
+
+/* Sidebar category toggle */
+.menu__link--sublist-caret::after {
+  background-size: 1.25rem 1.25rem;
+}
+
+/* Feature cards on homepage */
+.feature-card {
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(139, 92, 246, 0.15);
+}
+
+/* NIP badge styling */
+.nip-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #7C3AED, #4F46E5);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+/* Protocol diagram styling */
+.protocol-diagram {
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Better focus states for accessibility */
+a:focus,
+button:focus {
+  outline: 2px solid #8B5CF6;
+  outline-offset: 2px;
+}
+
+/* Announcement bar */
+div[class*="announcementBar"] {
+  font-weight: 500;
+}
+
+/* Navbar items */
+.navbar__link {
+  font-weight: 500;
+}
+
+.navbar__link--active {
+  color: var(--ifm-color-primary);
+}
+
+/* Sidebar improvements */
+.menu__link {
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+}
+
+.menu__link:hover {
+  background-color: rgba(139, 92, 246, 0.1);
+}
+
+.menu__link--active {
+  background-color: rgba(139, 92, 246, 0.15);
+}

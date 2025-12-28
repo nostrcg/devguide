@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 340">
+  <defs>
+    <linearGradient id="clientGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="relayGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#A78BFA;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="keyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F59E0B;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#D97706;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow2" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.1"/>
+    </filter>
+  </defs>
+
+  <!-- Background with border -->
+  <rect width="600" height="340" fill="#fafafa" rx="8"/>
+  <rect x="20" y="20" width="560" height="300" fill="none" stroke="#e5e7eb" stroke-width="2" rx="8" stroke-dasharray="5,5"/>
+
+  <!-- Title -->
+  <text x="300" y="50" text-anchor="middle" fill="#374151" font-family="system-ui, sans-serif" font-size="16" font-weight="600">Nostr Network</text>
+
+  <!-- Client box -->
+  <g filter="url(#shadow2)">
+    <rect x="60" y="120" width="120" height="80" rx="10" fill="url(#clientGrad)"/>
+    <text x="120" y="155" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="500">Client</text>
+    <text x="120" y="175" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="system-ui, sans-serif" font-size="11">(Your App)</text>
+  </g>
+
+  <!-- Keypair box -->
+  <g filter="url(#shadow2)">
+    <rect x="60" y="230" width="120" height="60" rx="10" fill="url(#keyGrad)"/>
+    <text x="120" y="265" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="500">User Keypair</text>
+  </g>
+
+  <!-- Relay 1 -->
+  <g filter="url(#shadow2)">
+    <rect x="380" y="80" width="140" height="70" rx="10" fill="url(#relayGrad2)"/>
+    <text x="450" y="115" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="500">Relay Server</text>
+    <text x="450" y="135" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="system-ui, sans-serif" font-size="11">wss://relay1.com</text>
+  </g>
+
+  <!-- Relay 2 -->
+  <g filter="url(#shadow2)">
+    <rect x="380" y="180" width="140" height="70" rx="10" fill="url(#relayGrad2)"/>
+    <text x="450" y="215" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="500">Relay Server</text>
+    <text x="450" y="235" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="system-ui, sans-serif" font-size="11">wss://relay2.com</text>
+  </g>
+
+  <!-- Connection: Client to Keypair -->
+  <line x1="120" y1="200" x2="120" y2="230" stroke="#D97706" stroke-width="2"/>
+  <text x="135" y="218" fill="#92400E" font-family="system-ui, sans-serif" font-size="10">signs</text>
+
+  <!-- Connection: Client to Relays -->
+  <g stroke="#8B5CF6" stroke-width="2" fill="none">
+    <path d="M180 140 L250 140 L250 115 L380 115"/>
+    <path d="M180 160 L250 160 L250 215 L380 215"/>
+  </g>
+
+  <!-- WebSocket labels -->
+  <g fill="#6B7280" font-family="system-ui, sans-serif" font-size="10">
+    <text x="280" y="108">WebSocket</text>
+    <text x="280" y="228">WebSocket</text>
+  </g>
+
+  <!-- Arrows -->
+  <g fill="#8B5CF6">
+    <polygon points="380,112 372,107 372,117"/>
+    <polygon points="182,137 174,132 174,142"/>
+    <polygon points="380,212 372,207 372,217"/>
+    <polygon points="182,157 174,152 174,162"/>
+  </g>
+</svg>

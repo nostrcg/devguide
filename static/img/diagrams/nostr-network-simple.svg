@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 280">
+  <defs>
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="relayGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#A78BFA;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.1"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="500" height="280" fill="#fafafa" rx="8"/>
+
+  <!-- Client A -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="100" width="100" height="60" rx="8" fill="url(#purpleGrad)"/>
+    <text x="80" y="135" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="500">Client A</text>
+  </g>
+
+  <!-- Client B -->
+  <g filter="url(#shadow)">
+    <rect x="370" y="100" width="100" height="60" rx="8" fill="url(#purpleGrad)"/>
+    <text x="420" y="135" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="500">Client B</text>
+  </g>
+
+  <!-- Relay 1 (top center) -->
+  <g filter="url(#shadow)">
+    <rect x="200" y="40" width="100" height="60" rx="8" fill="url(#relayGrad)"/>
+    <text x="250" y="75" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="500">Relay</text>
+  </g>
+
+  <!-- Relay 2 (bottom center) -->
+  <g filter="url(#shadow)">
+    <rect x="200" y="180" width="100" height="60" rx="8" fill="url(#relayGrad)"/>
+    <text x="250" y="215" text-anchor="middle" fill="white" font-family="system-ui, sans-serif" font-size="14" font-weight="500">Relay</text>
+  </g>
+
+  <!-- Connection lines -->
+  <g stroke="#8B5CF6" stroke-width="2" fill="none" stroke-linecap="round">
+    <!-- Client A to Relay 1 -->
+    <path d="M130 115 Q165 70 200 70" marker-end="url(#arrow)"/>
+    <!-- Client A to Relay 2 -->
+    <path d="M130 145 Q165 210 200 210"/>
+
+    <!-- Client B to Relay 1 -->
+    <path d="M370 115 Q335 70 300 70"/>
+    <!-- Client B to Relay 2 -->
+    <path d="M370 145 Q335 210 300 210"/>
+  </g>
+
+  <!-- Bidirectional arrows -->
+  <g fill="#8B5CF6">
+    <!-- Arrow heads indicating bidirectional -->
+    <polygon points="200,67 192,63 192,71"/>
+    <polygon points="133,117 125,113 125,121"/>
+
+    <polygon points="300,67 308,63 308,71"/>
+    <polygon points="367,117 375,113 375,121"/>
+
+    <polygon points="200,207 192,203 192,211"/>
+    <polygon points="133,143 125,139 125,147"/>
+
+    <polygon points="300,207 308,203 308,211"/>
+    <polygon points="367,143 375,139 375,147"/>
+  </g>
+
+  <!-- Labels -->
+  <text x="250" y="268" text-anchor="middle" fill="#666" font-family="system-ui, sans-serif" font-size="11">Clients connect to multiple relays via WebSocket</text>
+</svg>
