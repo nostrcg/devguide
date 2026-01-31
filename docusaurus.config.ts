@@ -99,6 +99,11 @@ const config: Config = {
           position: 'left',
         },
         {
+          to: '/guides/mobile-development',
+          label: 'Guides',
+          position: 'left',
+        },
+        {
           type: 'dropdown',
           label: 'Ecosystem',
           position: 'left',

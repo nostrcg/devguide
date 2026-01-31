@@ -69,6 +69,7 @@ const sidebars: SidebarsConfig = {
       label: 'Guides',
       collapsed: true,
       items: [
+        'guides/mobile-development',
         'guides/key-management',
         'guides/building-clients',
         'guides/nip-implementation',
