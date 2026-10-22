@@ -97,7 +97,7 @@ relay.example.com {
 }
 ```
 
-The `@nip11` matcher only helps relays that answer NIP-11 at their WebSocket URL. fonstr 0.0.25 serves it at `/relay/info` instead.
+The `@nip11` matcher only helps relays that answer NIP-11 at their WebSocket URL, which most do (fonstr from 0.0.26).
 
 ## HAProxy
 

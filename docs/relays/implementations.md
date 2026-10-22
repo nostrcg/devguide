@@ -42,7 +42,7 @@ Relay software that is maintained in October 2026, and what each is good for. To
 | [nosflare](https://github.com/Spl0itable/nosflare) (JavaScript) | 🟢 | Serverless relay on Cloudflare Workers, Durable Objects and D1. |
 | [NNostr](https://github.com/Kukks/NNostr) (C#, Postgres) | 🟢 | .NET relay and client library. |
 | [nak serve](https://github.com/fiatjaf/nak) (Go, memory) | 🟢 v0.21.2 | Test relay at `ws://localhost:10547`. `--negentropy`, `--blossom`, `--auth` flags. Nothing is saved. |
-| [fonstr](https://github.com/nostrapps/fonstr) (JavaScript, memory) | 🟢 0.0.25 | Dev/test only. `npx fonstr`, 1,000 events in memory. NIP-11 only at `/relay/info` (not compliant in 0.0.25). For a relay on Android, use Citrine. |
+| [fonstr](https://github.com/nostrapps/fonstr) (JavaScript, memory) | 🟢 0.0.26 | Dev/test only. `npx fonstr`, 1,000 events in memory by default. For a relay on Android, use Citrine. |
 
 ## Frameworks: build your own relay
 
