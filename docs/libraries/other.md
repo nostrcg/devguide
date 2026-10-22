@@ -86,7 +86,7 @@ gem install nostr_ruby
 | Language | Library | Status |
 |---|---|---|
 | C | [libnostr-c](https://github.com/privkeyio/libnostr-c) | 🟢 |
-| C | [noscrypt](https://github.com/VnUgE/noscrypt): crypto only | 🟡 Jun 2026 |
+| C | [noscrypt](https://github.com/VnUgE/noscrypt): crypto only | 🟢 Jun 2026 |
 | C | [nostrdb](https://github.com/damus-io/nostrdb): embedded event database | 🟢 |
 | Perl | [Net::Nostr](https://metacpan.org/pod/Net::Nostr) (`cpanm Net::Nostr`) | 🟢 2.003 |
 | Zig | [zig-nostr/nostr](https://github.com/zig-nostr/nostr) | 🟢 small |

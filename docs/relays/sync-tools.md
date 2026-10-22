@@ -28,6 +28,7 @@ To find public relays that support it, query NIP-66 monitors for `N=77` ([Relay 
 **Tested** with nak v0.21.2 between two `nak serve --negentropy` relays.
 
 ```bash
+# two-way: this also uploads the local relay's events to relay.example.com
 timeout 60 nak sync ws://localhost:10547 wss://relay.example.com
 ```
 

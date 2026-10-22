@@ -164,7 +164,7 @@ $('post').onsubmit = async (e) => {
     $('status').textContent = `Accepted by ${ok} of ${RELAYS.length} relays`
     $('text').value = ''
   } else {
-    $('status').textContent = 'Rejected: ' + results.map((r) => r.reason?.message).join('; ')
+    $('status').textContent = 'Rejected: ' + results.map((r) => r.reason?.message ?? String(r.reason)).join('; ')
   }
 }
 ```

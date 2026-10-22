@@ -163,7 +163,7 @@ nak event -k 7 -c '+' -e <event-id> -p <author-hex> $R
 nak event -k 30023 -d my-article -t title='Hello' -c '# Title' $R
 
 # ask relays to delete one of your events (NIP-09)
-nak event -k 5 -e <your-event-id> $R
+nak event -k 5 -e <your-event-id> -t k=1 $R
 ```
 
 With no relay URL, `nak event` only prints the signed event.

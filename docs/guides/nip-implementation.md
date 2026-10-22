@@ -13,7 +13,7 @@ NIPs are **Nostr Implementation Possibilities**: short specs in [nostr-protocol/
 1. **Read the NIP itself** on GitHub master, not a summary. NIPs change: kind 3's relay `content` is deprecated in favour of NIP-65, NIP-39 identities moved from kind 0 to kind 10011, and NIP-46 now separates the remote-signer key from the user key.
 2. **Check its status** in the [README](https://github.com/nostr-protocol/nips#list). Struck-through entries are **unrecommended**, among them NIP-04 (use NIP-17), NIP-06, NIP-26, NIP-28 and NIP-72 (use NIP-29), NIP-15 (use NIP-99) and NIP-90. Each NIP is also marked `draft` or `final`, and `optional` or `mandatory`.
 3. **Check the kind numbers** against the README's kinds table, and follow the NIP-01 ranges: 1000–9999 regular, 10000–19999 replaceable, 20000–29999 ephemeral, 30000–39999 addressable. Kinds 0 and 3 are replaceable too.
-4. **Look at an existing implementation.** nostr-tools, rust-nostr (nostr-sdk) and NDK implement most NIPs. Reading theirs shows you the edge cases, and testing against them catches interoperability bugs. See [Libraries](../libraries/overview.md).
+4. **Look at an existing implementation.** nostr-tools, Nostr Dev Kit (nostr-sdk, formerly rust-nostr) and NDK implement most NIPs. Reading theirs shows you the edge cases, and testing against them catches interoperability bugs. See [Libraries](../libraries/overview.md).
 5. **Ask what clients actually do.** For anything with many implementations (threads, zaps, DMs), check what popular clients emit before you decide what to accept. Be strict in what you send and tolerant in what you read.
 
 ## Where each NIP is implemented in this guide
@@ -54,13 +54,16 @@ const note = await signer.signEvent({
   kind: 1, created_at: Math.floor(Date.now() / 1000), tags: [], content: 'hello',
 })
 const results = await Promise.allSettled(pool.publish(relays, note, { onauth }))
-console.log(results.map(r => r.status === 'fulfilled' ? 'ok' : r.reason.message))
+// connection failures reject with a string, relay rejections with an Error
+console.log(results.map(r => r.status === 'fulfilled' ? 'ok' : String(r.reason?.message ?? r.reason)))
 
 // reads too: querySync has no onauth, so subscribe
 const reader = new SimplePool()
 reader.subscribeEose(relays, { ids: [note.id] }, {
   onauth,
   onevent: ev => console.log('read back', ev.id === note.id),
+  // stored events are in: close both pools so the script exits
+  oneose: () => { reader.close(relays); pool.close(relays) },
 })
 ```
 

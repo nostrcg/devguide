@@ -104,7 +104,7 @@ const ev = await signer.signEvent({
 await signer.close()
 ```
 
-With the `nostrconnect://` flow, your app shows a QR code and the signer scans it. Code for that flow, and for testing with `nak bunker`, is on the wiki's [Signers & login](https://github.com/nostrcg/devguide/wiki/Extensions) page. NDK (`NDKNip46Signer`) and rust-nostr's `nostr-connect` crate offer the same thing in other stacks.
+With the `nostrconnect://` flow, your app shows a QR code and the signer scans it. Code for that flow, and for testing with `nak bunker`, is on the wiki's [Signers & login](https://github.com/nostrcg/devguide/wiki/Extensions) page. NDK (`NDKNip46Signer`) and Nostr Dev Kit's `nostr-connect` crate offer the same thing in other stacks.
 
 On mobile, every request is a network round trip, and the signer may need the user to approve it. Show a pending state, batch what you can, and cache decrypted data locally rather than decrypting again.
 

@@ -103,7 +103,7 @@ const config: Config = {
           position: 'left',
         },
         {
-          to: '/guides/mobile-development',
+          to: '/guides/key-management',
           label: 'Guides',
           position: 'left',
         },
