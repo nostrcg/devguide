@@ -4,7 +4,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Nostr Developer Guide',
-  tagline: 'Build decentralized applications on the Nostr protocol',
+  tagline: 'Build clients, relays and tools on the Nostr protocol',
   favicon: 'img/favicon.ico',
 
   future: {
@@ -13,6 +13,9 @@ const config: Config = {
 
   markdown: {
     mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: 'throw',
+    },
   },
   themes: ['@docusaurus/theme-mermaid'],
 
@@ -22,7 +25,8 @@ const config: Config = {
   organizationName: 'nostrcg',
   projectName: 'devguide',
 
-  onBrokenLinks: 'warn',
+  onBrokenLinks: 'throw',
+  onBrokenAnchors: 'throw',
 
   i18n: {
     defaultLocale: 'en',
@@ -51,7 +55,7 @@ const config: Config = {
 
     metadata: [
       {name: 'keywords', content: 'nostr, protocol, decentralized, social, development, nips, relay, client'},
-      {name: 'description', content: 'Comprehensive developer documentation for building on the Nostr protocol'},
+      {name: 'description', content: 'Developer documentation for building on the Nostr protocol, from the W3C Nostr Community Group'},
       {property: 'og:type', content: 'website'},
     ],
 
@@ -116,6 +120,11 @@ const config: Config = {
           ],
         },
         {
+          href: 'https://github.com/nostrcg/devguide/wiki',
+          label: 'Wiki',
+          position: 'right',
+        },
+        {
           href: 'https://github.com/nostrcg/devguide',
           label: 'GitHub',
           position: 'right',
@@ -137,21 +146,26 @@ const config: Config = {
         {
           title: 'Reference',
           items: [
+            {label: 'NIP Index', to: '/reference/nip-index'},
+            {label: 'Event Kinds', to: '/reference/event-kinds'},
             {label: 'Libraries', to: '/libraries/overview'},
-            {label: 'NIPs', href: 'https://github.com/nostr-protocol/nips'},
             {label: 'Relay Guide', to: '/relays/overview'},
+            {label: 'NIPs repository', href: 'https://github.com/nostr-protocol/nips'},
           ],
         },
         {
           title: 'Community',
           items: [
             {label: 'W3C Nostr CG', href: 'https://www.w3.org/community/nostr/'},
-            {label: 'GitHub', href: 'https://github.com/nostr-protocol'},
-            {label: 'Nostr Apps', href: 'https://nostr.net'},
+            {label: 'Devguide wiki', href: 'https://github.com/nostrcg/devguide/wiki'},
+            {label: 'Devguide on GitHub', href: 'https://github.com/nostrcg/devguide'},
+            {label: 'nostr-protocol on GitHub', href: 'https://github.com/nostr-protocol'},
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} W3C Nostr Community Group. Built with Docusaurus.`,
+      copyright:
+        'Last reviewed October 2026. A work of the W3C Nostr Community Group: a Community Group work, ' +
+        'not a W3C Standard and not on the W3C Standards Track. Built with Docusaurus.',
     },
 
     prism: {

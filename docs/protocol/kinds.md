@@ -1,342 +1,254 @@
 ---
 sidebar_position: 3
 title: Event Kinds
-description: Reference for all Nostr event kinds
+description: What the kind number means, how relays store each range, and the kinds you will use first
 ---
 
 # Event Kinds
 
-Event kinds are integers that define the type and meaning of an event. This page documents the most commonly used kinds.
+The `kind` is an integer from 0 to 65535 that says what an event is and how to read its `content` and `tags`. This page covers the storage ranges and the kinds most apps meet first. For the full list, see the kinds table in the [NIPs README](https://github.com/nostr-protocol/nips#event-kinds) or the machine-readable [registry of kinds](https://github.com/nostr-protocol/registry-of-kinds). From the command line, `nak kind 1111` describes any kind.
 
-## Kind Ranges
+## Ranges
 
-| Range | Category | Storage |
-|-------|----------|---------|
-| 0-999 | Regular events | All stored |
-| 1000-9999 | Regular events | All stored |
-| 10000-19999 | Replaceable events | Only latest kept |
-| 20000-29999 | Ephemeral events | Not stored |
-| 30000-39999 | Parameterized replaceable | Latest per `d` tag |
-| 40000-49999 | Reserved | - |
+[NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md) groups kinds by how relays store them:
 
-## Core Kinds
+| Kinds | Class | What relays keep |
+|---|---|---|
+| 1, 2, 4–44, 1000–9999 | **Regular** | Every event |
+| 0, 3, 10000–19999 | **Replaceable** | Only the newest per `pubkey` + `kind` |
+| 20000–29999 | **Ephemeral** | Nothing: forwarded to live subscribers, not stored |
+| 30000–39999 | **Addressable** | Only the newest per `pubkey` + `kind` + `d` tag |
 
-### Kind 0: User Metadata
+- If two replaceable events have the same `created_at`, the one with the lowest id (in lexical order) wins.
+- An addressable event is referenced by its address, `<kind>:<pubkey>:<d>`, in an `a` tag or an `naddr`. These were called "parameterized replaceable events" before NIP-01 renamed them.
+- These are conventions. A relay may still keep old versions or refuse some kinds.
 
-Profile information. Content is a JSON object.
+:::caution Replaceable events and partial data
+When you update a replaceable event (a profile, a follow list, a relay list), the new event **replaces** the old one. Fetch the latest version from the user's relays first, change it, then publish. If you publish a follow list built from a stale or empty copy, the user loses their follows.
+:::
+
+## Kinds you'll meet first
+
+| Kind | What | Class | Spec |
+|---|---|---|---|
+| 0 | Profile metadata | Replaceable | [01](https://github.com/nostr-protocol/nips/blob/master/01.md), [24](https://github.com/nostr-protocol/nips/blob/master/24.md) |
+| 1 | Short text note | Regular | [10](https://github.com/nostr-protocol/nips/blob/master/10.md) |
+| 3 | Follow list | Replaceable | [02](https://github.com/nostr-protocol/nips/blob/master/02.md) |
+| 5 | Deletion request | Regular | [09](https://github.com/nostr-protocol/nips/blob/master/09.md) |
+| 6 / 16 | Repost of a kind 1 / of any other kind | Regular | [18](https://github.com/nostr-protocol/nips/blob/master/18.md) |
+| 7 | Reaction | Regular | [25](https://github.com/nostr-protocol/nips/blob/master/25.md) |
+| 9 | Chat message | Regular | [C7](https://github.com/nostr-protocol/nips/blob/master/C7.md) |
+| 11 | Forum thread | Regular | [7D](https://github.com/nostr-protocol/nips/blob/master/7D.md) |
+| 13 | Seal | Regular | [59](https://github.com/nostr-protocol/nips/blob/master/59.md) |
+| 14 / 15 | Private message / private file message | (never published directly) | [17](https://github.com/nostr-protocol/nips/blob/master/17.md) |
+| 20 / 21 / 22 | Picture / video / short video | Regular | [68](https://github.com/nostr-protocol/nips/blob/master/68.md), [71](https://github.com/nostr-protocol/nips/blob/master/71.md) |
+| 62 | Request to vanish | — (45–999: no NIP-01 rule) | [62](https://github.com/nostr-protocol/nips/blob/master/62.md) |
+| 1059 | Gift wrap | Regular | [59](https://github.com/nostr-protocol/nips/blob/master/59.md) |
+| 1111 | Comment | Regular | [22](https://github.com/nostr-protocol/nips/blob/master/22.md) |
+| 1984 | Report | Regular | [56](https://github.com/nostr-protocol/nips/blob/master/56.md) |
+| 9734 / 9735 | Zap request / zap receipt | Regular | [57](https://github.com/nostr-protocol/nips/blob/master/57.md) |
+| 10000 | Mute list | Replaceable | [51](https://github.com/nostr-protocol/nips/blob/master/51.md) |
+| 10001 / 10003 | Pinned notes / bookmarks | Replaceable | [51](https://github.com/nostr-protocol/nips/blob/master/51.md) |
+| 10002 | Relay list | Replaceable | [65](https://github.com/nostr-protocol/nips/blob/master/65.md) |
+| 10050 | Relays for receiving DMs | Replaceable | [17](https://github.com/nostr-protocol/nips/blob/master/17.md) |
+| 10063 | Blossom media servers | Replaceable | [B7](https://github.com/nostr-protocol/nips/blob/master/B7.md) |
+| 13194 / 23194 / 23195 | Wallet Connect info / request / response | Replaceable / ephemeral | [47](https://github.com/nostr-protocol/nips/blob/master/47.md) |
+| 22242 | Relay authentication | Ephemeral | [42](https://github.com/nostr-protocol/nips/blob/master/42.md) |
+| 24133 | Remote signing | Ephemeral | [46](https://github.com/nostr-protocol/nips/blob/master/46.md) |
+| 27235 | HTTP auth | Ephemeral | [98](https://github.com/nostr-protocol/nips/blob/master/98.md) |
+| 30000 | Follow sets | Addressable | [51](https://github.com/nostr-protocol/nips/blob/master/51.md) |
+| 30023 | Long-form article | Addressable | [23](https://github.com/nostr-protocol/nips/blob/master/23.md) |
+| 30078 | App-specific data | Addressable | [78](https://github.com/nostr-protocol/nips/blob/master/78.md) |
+| 39000–39009 | Group metadata (written by the relay) | Addressable | [29](https://github.com/nostr-protocol/nips/blob/master/29.md) |
+
+Kind 4 (NIP-04 encrypted DMs) is **unrecommended**: it leaks metadata (who talks to whom, and when) and its encryption is not state of the art. Use NIP-17 instead (below).
+
+## Examples
+
+The examples show only `kind`, `tags` and `content`. Each was signed and accepted by a relay when this page was written.
+
+### Kind 0: profile
+
+`content` is a JSON object, as a string. `name` is the short handle and `display_name` the longer, richer name. Clients should still set `name`.
 
 ```json
 {
   "kind": 0,
-  "content": "{\"name\":\"Alice\",\"about\":\"Developer\",\"picture\":\"https://example.com/avatar.jpg\",\"nip05\":\"alice@example.com\"}",
-  "tags": []
+  "tags": [],
+  "content": "{\"name\":\"alice\",\"display_name\":\"Alice 🌻\",\"about\":\"Building on Nostr\",\"picture\":\"https://example.com/alice.jpg\",\"nip05\":\"alice@example.com\",\"lud16\":\"alice@example.com\",\"website\":\"https://example.com\"}"
 }
 ```
 
-**Content fields:**
-| Field | Description |
-|-------|-------------|
-| `name` | Display name |
-| `about` | Bio/description |
-| `picture` | Avatar URL |
-| `banner` | Banner image URL |
-| `nip05` | NIP-05 identifier |
-| `lud16` | Lightning address |
-| `website` | Website URL |
+Other fields from [NIP-24](https://github.com/nostr-protocol/nips/blob/master/24.md) include `banner` and `bot`. `nip05` is a verified handle ([NIP-05](../guides/nip05-verification.md)) and `lud16` a Lightning address for [zaps](../guides/zaps.md).
 
-### Kind 1: Short Text Note
+### Kind 1: note
 
-The basic "post" or "tweet" equivalent.
+Plain text. Mentions are `nostr:` URIs in the text ([NIP-27](https://github.com/nostr-protocol/nips/blob/master/27.md)), and replies use marked `e` tags. See [Events → Replies](./events.md).
 
-```json
-{
-  "kind": 1,
-  "content": "Hello, world! This is my first note.",
-  "tags": []
-}
-```
+### Kind 3: follow list
 
-### Kind 3: Follow List
-
-List of pubkeys the user follows. Replaceable.
+One `p` tag per follow. The relay URL and the petname are optional. `content` is not used: put relays in kind 10002, not here.
 
 ```json
 {
   "kind": 3,
-  "content": "{\"wss://relay.example.com\":{\"read\":true,\"write\":true}}",
+  "content": "",
   "tags": [
-    ["p", "pubkey1", "wss://relay1.com", "alice"],
-    ["p", "pubkey2", "wss://relay2.com", "bob"]
+    ["p", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3", "wss://relay.primal.net", "alice"],
+    ["p", "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"]
   ]
 }
 ```
 
-### Kind 4: Encrypted Direct Message (Deprecated)
+### Kind 5: deletion request
 
-NIP-04 encrypted DMs. Consider NIP-44 (kind 1059) instead.
-
-```json
-{
-  "kind": 4,
-  "content": "<encrypted content>?iv=<iv>",
-  "tags": [["p", "<recipient pubkey>"]]
-}
-```
-
-### Kind 5: Deletion Request
-
-Request to delete events.
+Lists the events to delete (`e` for ids, `a` for addresses) and their kinds (`k`). Relays should delete referenced events by the same author. It is a request: copies elsewhere may survive.
 
 ```json
 {
   "kind": 5,
-  "content": "These events were posted by mistake",
+  "content": "posted by mistake",
   "tags": [
-    ["e", "event-id-to-delete"],
-    ["e", "another-event-id"]
+    ["e", "3840c24f14afcc3682d145f3d8a5a8684a273294470f88c38827ad6ed035b569"],
+    ["k", "1"]
   ]
 }
 ```
 
-### Kind 6: Repost
+### Kind 7: reaction
 
-Repost/boost of another event.
-
-```json
-{
-  "kind": 6,
-  "content": "<original event JSON>",
-  "tags": [
-    ["e", "original-event-id", "wss://relay.com"],
-    ["p", "original-author-pubkey"]
-  ]
-}
-```
-
-### Kind 7: Reaction
-
-Like, emoji reaction, or similar.
+`+` is a like, `-` a dislike, and any other content an emoji reaction. Tag the event, its author and its kind.
 
 ```json
 {
   "kind": 7,
   "content": "+",
   "tags": [
-    ["e", "event-being-reacted-to"],
-    ["p", "author-of-reacted-event"]
+    ["e", "3840c24f14afcc3682d145f3d8a5a8684a273294470f88c38827ad6ed035b569", "wss://relay.primal.net", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3"],
+    ["p", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3"],
+    ["k", "1"]
   ]
 }
 ```
 
-**Content values:**
-- `+` - Like
-- `-` - Dislike
-- Emoji (e.g., `🤙`, `🔥`) - Custom reaction
+### Kind 10002: relay list
 
-## Social Kinds
-
-### Kind 1984: Report
-
-Report content or users for moderation.
-
-```json
-{
-  "kind": 1984,
-  "content": "Reason for report",
-  "tags": [
-    ["e", "reported-event-id", "spam"],
-    ["p", "reported-pubkey", "impersonation"]
-  ]
-}
-```
-
-### Kind 9735: Zap Receipt
-
-Lightning payment receipt (from wallet service).
-
-```json
-{
-  "kind": 9735,
-  "content": "Optional message",
-  "tags": [
-    ["p", "recipient-pubkey"],
-    ["e", "zapped-event-id"],
-    ["bolt11", "lnbc..."],
-    ["description", "<kind 9734 zap request JSON>"]
-  ]
-}
-```
-
-### Kind 30023: Long-form Content
-
-Blog posts, articles. Parameterized replaceable.
-
-```json
-{
-  "kind": 30023,
-  "content": "# My Article\n\nThis is a long-form article...",
-  "tags": [
-    ["d", "my-article-slug"],
-    ["title", "My Article Title"],
-    ["summary", "Brief description"],
-    ["published_at", "1700000000"],
-    ["t", "technology"]
-  ]
-}
-```
-
-## Lists (NIP-51)
-
-### Kind 10000: Mute List
-
-Muted pubkeys and threads.
-
-```json
-{
-  "kind": 10000,
-  "content": "",
-  "tags": [
-    ["p", "muted-pubkey-1"],
-    ["p", "muted-pubkey-2"],
-    ["e", "muted-thread-id"]
-  ]
-}
-```
-
-### Kind 10001: Pin List
-
-Pinned events/notes.
-
-```json
-{
-  "kind": 10001,
-  "content": "",
-  "tags": [
-    ["e", "pinned-event-1"],
-    ["e", "pinned-event-2"]
-  ]
-}
-```
-
-### Kind 30000: Custom Lists
-
-Generic lists with custom identifiers.
-
-```json
-{
-  "kind": 30000,
-  "tags": [
-    ["d", "my-favorite-devs"],
-    ["p", "pubkey1"],
-    ["p", "pubkey2"]
-  ]
-}
-```
-
-## Application Kinds
-
-### Kind 1063: File Metadata
-
-Metadata for files/media (NIP-94).
-
-```json
-{
-  "kind": 1063,
-  "content": "Description of the file",
-  "tags": [
-    ["url", "https://example.com/file.jpg"],
-    ["m", "image/jpeg"],
-    ["x", "<sha256 hash>"],
-    ["size", "102400"],
-    ["dim", "1920x1080"]
-  ]
-}
-```
-
-### Kind 30009: Badge Definition
-
-Define achievements/badges (NIP-58).
-
-```json
-{
-  "kind": 30009,
-  "tags": [
-    ["d", "early-adopter"],
-    ["name", "Early Adopter"],
-    ["description", "Joined before 2024"],
-    ["image", "https://example.com/badge.png"],
-    ["thumb", "https://example.com/badge-thumb.png"]
-  ]
-}
-```
-
-### Kind 31990: App Handler
-
-Declare which event kinds an app handles (NIP-89).
-
-```json
-{
-  "kind": 31990,
-  "tags": [
-    ["d", "my-app-identifier"],
-    ["k", "1"],
-    ["k", "30023"]
-  ],
-  "content": "{\"name\":\"My App\",\"about\":\"Handles notes and articles\"}"
-}
-```
-
-## Relay-Related Kinds
-
-### Kind 10002: Relay List Metadata
-
-User's preferred relays (NIP-65).
+The **outbox model**. An `r` tag with no marker means read and write. `write` relays are where the user posts, so read their notes there. `read` relays are where they want to receive mentions, so send replies there too.
 
 ```json
 {
   "kind": 10002,
   "content": "",
   "tags": [
-    ["r", "wss://relay1.com", "read"],
-    ["r", "wss://relay2.com", "write"],
-    ["r", "wss://relay3.com"]
+    ["r", "wss://relay.primal.net/"],
+    ["r", "wss://nos.lol/", "write"],
+    ["r", "wss://relay.nostr.net/", "read"]
   ]
 }
 ```
 
-### Kind 30078: App-Specific Data
+DMs use a separate list, kind 10050, with `relay` tags.
 
-Store application data in relays.
+### Kind 10000: mute list
+
+Public entries go in tags. A list can also hold private entries, encrypted to the user's own key, in `content` ([NIP-51](https://github.com/nostr-protocol/nips/blob/master/51.md)).
+
+```json
+{
+  "kind": 10000,
+  "content": "",
+  "tags": [
+    ["p", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3"],
+    ["t", "spam"],
+    ["word", "giveaway"],
+    ["e", "3840c24f14afcc3682d145f3d8a5a8684a273294470f88c38827ad6ed035b569"]
+  ]
+}
+```
+
+### Kind 30000: follow set
+
+A named group of people. Each `d` value is a separate list.
+
+```json
+{
+  "kind": 30000,
+  "content": "",
+  "tags": [
+    ["d", "nostr-devs"],
+    ["title", "Nostr devs"],
+    ["p", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3"],
+    ["p", "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"]
+  ]
+}
+```
+
+### Kind 30023: long-form article
+
+Markdown in `content`. The `d` tag is the article's stable identifier. Publishing again with the same `d` replaces it.
+
+```json
+{
+  "kind": 30023,
+  "content": "# Hello\n\nMarkdown body…",
+  "tags": [
+    ["d", "hello-nostr"],
+    ["title", "Hello, Nostr"],
+    ["summary", "A first article"],
+    ["published_at", "1792650000"],
+    ["t", "nostr"]
+  ]
+}
+```
+
+### Kind 1111: comment
+
+Comments work on any event, address or external id. Uppercase tags point at the **root** of the thread, lowercase at the **parent**. For a top-level comment they're the same. Because the parent here is addressable, the comment also carries an `e` tag with the version's id.
+
+```json
+{
+  "kind": 1111,
+  "content": "Great article!",
+  "tags": [
+    ["A", "30023:b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3:hello-nostr", "wss://nos.lol/"],
+    ["K", "30023"],
+    ["P", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3"],
+    ["a", "30023:b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3:hello-nostr", "wss://nos.lol/"],
+    ["e", "3840c24f14afcc3682d145f3d8a5a8684a273294470f88c38827ad6ed035b569", "wss://nos.lol/"],
+    ["k", "30023"],
+    ["p", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3"]
+  ]
+}
+```
+
+### Kind 30078: app data
+
+Settings or state for one app, under a `d` tag the app chooses. The content is up to the app and is public unless you encrypt it.
 
 ```json
 {
   "kind": 30078,
-  "tags": [["d", "app-settings-myapp"]],
-  "content": "{\"theme\":\"dark\",\"notifications\":true}"
+  "content": "{\"theme\":\"dark\"}",
+  "tags": [["d", "com.example.myapp/settings"]]
 }
 ```
 
-## Quick Reference Table
+## Private messages: kinds 14, 13 and 1059
 
-| Kind | Name | Replaceable | NIP |
-|------|------|-------------|-----|
-| 0 | Metadata | Yes | 1 |
-| 1 | Short Note | No | 1 |
-| 3 | Follows | Yes | 2 |
-| 4 | Encrypted DM | No | 4 |
-| 5 | Deletion | No | 9 |
-| 6 | Repost | No | 18 |
-| 7 | Reaction | No | 25 |
-| 1984 | Report | No | 56 |
-| 9735 | Zap Receipt | No | 57 |
-| 10000 | Mute List | Yes | 51 |
-| 10001 | Pin List | Yes | 51 |
-| 10002 | Relay List | Yes | 65 |
-| 30000 | Custom Lists | Param | 51 |
-| 30023 | Long-form | Param | 23 |
+[NIP-17](https://github.com/nostr-protocol/nips/blob/master/17.md) DMs nest three events:
 
-## See Also
+1. The message is a kind 14 **rumor**: an event that is never signed, so it can't be proven if it leaks.
+2. It is encrypted with [NIP-44](https://github.com/nostr-protocol/nips/blob/master/44.md) into a kind 13 **seal**, signed by the sender.
+3. The seal is encrypted again into a kind 1059 **gift wrap**, signed by a random one-time key and tagged only with the recipient.
 
-- [Full NIPs Repository](https://github.com/nostr-protocol/nips)
-- [Event Structure](./events)
-- [Working with Filters](./filters)
+Relays see only gift wraps from random keys. Send one wrap per recipient plus one to yourself, to each recipient's kind 10050 relays. After unwrapping, check that the seal's `pubkey` matches the rumor's `pubkey`. The wiki's [Build a client](https://github.com/nostrcg/devguide/wiki/Build-a-Client) lists the other traps.
+
+## Zaps: kinds 9734 and 9735
+
+A **zap request** (9734) is signed by the sender and sent over HTTP to the recipient's LNURL `callback` URL. It is not published to relays. When the invoice is paid, the recipient's LNURL server publishes a **zap receipt** (9735). The receipt has the `bolt11` invoice and the original request in a `description` tag. Clients must validate receipts as NIP-57 describes. See [Zaps](../guides/zaps.md).
+
+## Picking a kind for something new
+
+- Check the [NIPs README](https://github.com/nostr-protocol/nips#event-kinds) and the [registry of kinds](https://github.com/nostr-protocol/registry-of-kinds) first. Reuse an existing kind if it fits.
+- Pick the range by storage: regular for things that accumulate, replaceable for one-per-user state, addressable for many named documents per user, ephemeral for signals.
+- For one app's settings or state, kind 30078 may be enough.

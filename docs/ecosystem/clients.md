@@ -1,239 +1,77 @@
 ---
 sidebar_position: 1
 title: Nostr Clients
-description: Overview of Nostr client applications
+description: Open-source Nostr clients to test against and learn from, checked October 2026
 ---
 
 # Nostr Clients
 
-Nostr clients are applications that users interact with. This page covers the major clients and their features.
+As a developer you need clients for two things: checking that the events your code publishes show up correctly elsewhere, and reading real code that already solves outbox routing, caching, zaps or private messages. Every client below is open source, and each repo was checked with the GitHub API in October 2026.
 
-## What Makes a Good Client?
+`🟢 active · 🟡 quiet (6–12 months) · 🔴 archived or dead · checked Oct 2026`
 
-- **Key management** - Secure handling of private keys or NIP-07 support
-- **Relay management** - Connect to multiple relays
-- **NIP support** - Implementation of relevant NIPs
-- **Performance** - Fast loading and smooth UX
-- **Cross-platform** - Available on user's preferred platform
+**Where to start reading:** for a web client, Coracle (outbox routing) or noStrudel (applesauce). For iOS, Damus. For Android, Amethyst.
 
-## Mobile Clients
+## Mobile and desktop
 
-### iOS
+| Client | Platforms · language | Status | Worth reading for |
+|---|---|---|---|
+| **Damus** · [site](https://damus.io) · [repo](https://github.com/damus-io/damus) | iOS, macOS · Swift | 🟢 | Uses [nostrdb](https://github.com/damus-io/nostrdb), an embedded C event database |
+| **Notedeck** · [repo](https://github.com/damus-io/notedeck) | Linux, macOS, Windows, Android · Rust | 🟢 | Multi-column client from the Damus team, also on nostrdb |
+| **Amethyst** · [site](https://amethyst.social) · [repo](https://github.com/vitorpamplona/amethyst) | Android · Kotlin | 🟢 v1.19 | Very wide NIP coverage; its protocol layer is the [Quartz](https://github.com/vitorpamplona/quartz) library |
+| **Primal** · [site](https://primal.net) · [Android](https://github.com/PrimalHQ/primal-android-app) · [iOS](https://github.com/PrimalHQ/primal-ios-app) · [web](https://github.com/PrimalHQ/primal-web-app) | Kotlin, Swift, TypeScript | 🟢 | Apps backed by Primal's caching service |
+| **Nostur** · [site](https://nostur.com) · [repo](https://github.com/nostur-com/nostur-ios-public) | iOS, macOS · Swift | 🟢 | Native Swift client |
+| **YakiHonne** · [site](https://yakihonne.com) · [mobile](https://github.com/YakiHonne/mobile-app) · [web](https://github.com/YakiHonne/web-app) | Dart (Flutter), JavaScript | 🟢 | Long-form articles (NIP-23), social and payments |
+| **Gossip** · [repo](https://github.com/mikedilger/gossip) | Linux, macOS, Windows · Rust | 🔴 idle | The early outbox-model reference client. Its author marked it idle in 2026; the [YGGverse/gossip](https://github.com/YGGverse/gossip) fork continues it |
 
-#### Damus
+## Web
 
-The most popular iOS Nostr client.
+| Client | Language | Status | Worth reading for |
+|---|---|---|---|
+| **Jumble** · [site](https://jumble.social) · [repo](https://github.com/CodyTseng/jumble) | TypeScript | 🟢 | Browsing feeds relay by relay |
+| **noStrudel** · [site](https://nostrudel.ninja) · [repo](https://github.com/hzrd149/nostrudel) | TypeScript | 🟢 | Power-user client; built on [applesauce](https://applesauce.build) |
+| **Coracle** · [site](https://coracle.social) · [repo](https://github.com/coracle-social/coracle) | Svelte | 🟢 | Outbox routing, built on [welshman](https://welshman.coracle.social) |
+| **Flotilla** · [site](https://flotilla.social) · [repo](https://github.com/coracle-social/flotilla) | Svelte | 🟢 | Discord-style communities hosted on relays |
+| **Snort** · [site](https://snort.social) · [repo](https://github.com/v0l/snort) | TypeScript (React) | 🟢 | Its core is the `@snort/system` library |
+| **Iris** · [site](https://iris.to) · [repo](https://github.com/irislib/iris-client) | TypeScript | 🟢 | Offline-first, social-graph filtering. The old `iris-messenger` repo is archived |
+| **Ditto** · [site](https://ditto.pub) · [repo](https://gitlab.com/soapbox-pub/ditto) | TypeScript | 🟢 | Built with [Nostrify](https://nostrify.dev) |
 
-- **Platform:** iOS, macOS
-- **Repository:** [github.com/damus-io/damus](https://github.com/damus-io/damus)
-- **Website:** [damus.io](https://damus.io)
+## Messaging and other apps
 
-**Features:**
-- Full social experience
-- Lightning zaps (NIP-57)
-- NIP-05 verification
-- Image/video uploads
-- Thread views
+| App | Status | Notes |
+|---|---|---|
+| **0xchat** · [site](https://0xchat.com) · [repo](https://github.com/0xchat-app/0xchat-app-main) | 🟢 | Private chat and groups (Flutter) |
+| **White Noise** · [site](https://whitenoise.chat) · [iOS](https://github.com/marmot-protocol/whitenoise-ios) · [Android](https://github.com/marmot-protocol/whitenoise-android) | 🟢 | MLS group messaging over Nostr ([Marmot](https://github.com/marmot-protocol/marmot)) |
+| **Keychat** · [site](https://keychat.io) · [repo](https://github.com/keychat-io/keychat-app) | 🟢 | Encrypted chat, ecash wallet and mini apps |
+| **Shopstr** · [site](https://shopstr.market) · [repo](https://github.com/shopstr-eng/shopstr) | 🟢 | Marketplace. The old `shopstr.store` domain is gone |
 
-#### Primal
+Quiet since mid-2025: [Olas](https://github.com/pablof7z/olas) (photos) and [Highlighter](https://github.com/pablof7z/highlighter) (highlights and long-form), both last pushed July–August 2025.
 
-Feature-rich client with caching layer.
+## Moved, archived or dead
 
-- **Platform:** iOS, Android, Web
-- **Website:** [primal.net](https://primal.net)
+| Project | What happened |
+|---|---|
+| Iris (old), `irislib/iris-messenger` | 🔴 archived; replaced by `irislib/iris-client` |
+| Nostros | 🔴 archived Feb 2025 |
+| Habla (habla.news) | 🔴 site gone |
+| Stemstr | 🔴 site gone |
+| White Noise (Flutter), `marmot-protocol/whitenoise` | 🔴 archived; split into the iOS, Android and web repos |
+| Nosky, Nozzle, Hamstr | 🔴 archived or no commits since 2023–2024 |
 
-**Features:**
-- Built-in caching for performance
-- Premium features available
-- Wallet integration
-- Advanced search
+## Testing your events in clients
 
-### Android
+- Post to a public relay that the client reads (for example `wss://relay.primal.net`), then open the event in two or three clients from different families: one web (Jumble or noStrudel), one iOS (Damus or Nostur), one Android (Amethyst).
+- [njump.me](https://njump.me) renders any `nevent`, `naddr` or `npub` as a plain web page: a quick way to share a link to what you published.
+- Use a throwaway key for tests, never your main account.
 
-#### Amethyst
+## Client discovery (NIP-89)
 
-Full-featured Android client.
+[NIP-89](https://github.com/nostr-protocol/nips/blob/master/89.md) lets apps announce which event kinds they handle (kind 31990), and users recommend apps for a kind (kind 31989). If your app handles a new kind, publish a kind 31990 so other clients can link to it.
 
-- **Platform:** Android
-- **Repository:** [github.com/vitorpamplona/amethyst](https://github.com/vitorpamplona/amethyst)
+## Finding more
 
-**Features:**
-- Communities support
-- Live streams
-- Zaps
-- NIP-05 verification
-- Multiple accounts
+- [nostr.net](https://nostr.net): a directory of Nostr apps and resources
+- [awesome-nostr](https://github.com/aljazceru/awesome-nostr): long list; check each entry, some links are stale
+- The wiki's [Client Implementations](https://github.com/nostrcg/devguide/wiki/Client-Implementations) page
 
-#### Nostros
-
-Minimalist Android client.
-
-- **Repository:** [github.com/KoalaSat/nostros](https://github.com/KoalaSat/nostros)
-
-**Features:**
-- Lightweight
-- Focus on privacy
-- Tor support
-
-## Web Clients
-
-### Snort
-
-Modern web client with clean UI.
-
-- **Website:** [snort.social](https://snort.social)
-- **Repository:** [github.com/v0l/snort](https://github.com/v0l/snort)
-
-**Features:**
-- Fast performance
-- NIP-07 support
-- Zaps
-- Dark mode
-- Progressive Web App
-
-### Iris
-
-Social web client with unique features.
-
-- **Website:** [iris.to](https://iris.to)
-- **Repository:** [github.com/irislib/iris-messenger](https://github.com/irislib/iris-messenger)
-
-**Features:**
-- Gun.js integration
-- Offline support
-- Encrypted DMs
-- No signup required
-
-### nostrudel
-
-Power-user focused client.
-
-- **Website:** [nostrudel.ninja](https://nostrudel.ninja)
-- **Repository:** [github.com/hzrd149/nostrudel](https://github.com/hzrd149/nostrudel)
-
-**Features:**
-- Advanced relay management
-- DVMs support
-- Multiple view modes
-- Developer-friendly
-
-### Coracle
-
-Community-focused client.
-
-- **Website:** [coracle.social](https://coracle.social)
-- **Repository:** [github.com/coracle-social/coracle](https://github.com/coracle-social/coracle)
-
-**Features:**
-- Groups/communities
-- Relay-focused
-- Clean interface
-
-## Desktop Clients
-
-### Gossip
-
-Native desktop client in Rust.
-
-- **Repository:** [github.com/mikedilger/gossip](https://github.com/mikedilger/gossip)
-- **Platform:** Windows, macOS, Linux
-
-**Features:**
-- High performance
-- Local database
-- Advanced relay scoring
-- Privacy focused
-
-### More
-
-Native macOS client.
-
-- **Website:** [more.nostr.app](https://more.nostr.app)
-- **Platform:** macOS
-
-## Specialized Clients
-
-### Long-form Content
-
-#### Habla
-
-Blog platform for Nostr (NIP-23).
-
-- **Website:** [habla.news](https://habla.news)
-- **Repository:** [github.com/verbiricha/habla.news](https://github.com/verbiricha/habla.news)
-
-#### Yakihonne
-
-Long-form and curated content.
-
-- **Website:** [yakihonne.com](https://yakihonne.com)
-
-### Media
-
-#### Stemstr
-
-Music-focused Nostr client.
-
-- **Website:** [stemstr.app](https://stemstr.app)
-
-#### Slidestr
-
-Image galleries and photography.
-
-- **Website:** [slidestr.net](https://slidestr.net)
-
-### Marketplace
-
-#### Shopstr
-
-E-commerce on Nostr.
-
-- **Website:** [shopstr.store](https://shopstr.store)
-
-### Chat
-
-#### 0xchat
-
-Private messaging client.
-
-- **Website:** [0xchat.com](https://0xchat.com)
-
-## Client Features Matrix
-
-| Client | Platform | Zaps | DMs | NIP-05 | Long-form |
-|--------|----------|------|-----|--------|-----------|
-| Damus | iOS | ✓ | ✓ | ✓ | - |
-| Amethyst | Android | ✓ | ✓ | ✓ | ✓ |
-| Primal | All | ✓ | ✓ | ✓ | - |
-| Snort | Web | ✓ | ✓ | ✓ | - |
-| Iris | Web | ✓ | ✓ | ✓ | - |
-| Gossip | Desktop | ✓ | ✓ | ✓ | - |
-| Habla | Web | ✓ | - | ✓ | ✓ |
-
-## Building Your Own Client
-
-Starting points:
-
-1. **[Build Your First App](../getting-started/first-app)** - Basic tutorial
-2. **[Building Clients Guide](../guides/building-clients)** - In-depth guide
-3. **[Libraries Overview](../libraries/overview)** - Choose your language
-
-Key considerations:
-- Start with core features (notes, profiles, follows)
-- Implement NIP-07 for key management
-- Use multiple relays for reliability
-- Consider mobile-first design
-
-## Client Discovery
-
-Find more clients:
-
-- [Nostr Apps](https://nostr.net) - Directory of Nostr applications
-- [Awesome Nostr](https://github.com/aljazceru/awesome-nostr#clients) - Curated list
-- [Nostr.how](https://nostr.how/clients) - Client guides
-
-## See Also
-
-- [Relay Implementations](../relays/overview)
-- [Developer Tools](./tools)
-- [Building Clients Guide](../guides/building-clients)
+To build your own, start with [Build Your First App](../getting-started/first-app.md) and [Building Clients](../guides/building-clients.md).

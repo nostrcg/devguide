@@ -1,230 +1,94 @@
 ---
 sidebar_position: 5
 title: NIPs (Nostr Implementation Possibilities)
-description: Understanding the NIP standards system
+description: How the NIP specs work, which ones to start with for each kind of app, and which ones not to build on
 ---
 
 # NIPs (Nostr Implementation Possibilities)
 
-NIPs are the specification documents that define how Nostr works. They range from the core protocol to optional features.
+NIPs are the specification documents for Nostr. They live in one GitHub repository, [nostr-protocol/nips](https://github.com/nostr-protocol/nips). Each one is a short Markdown file named by its number or code (`01.md`, `65.md`, `B7.md`). This page explains how to read them and which ones matter for what you're building. It was checked against the repository on 21 October 2026.
 
-## What are NIPs?
+:::info Not a checklist
+The NIPs README says it plainly: *"NIPs listed here are not a protocol checklist… Don't implement something just because it exists in this repo."* Implement NIP-01, then add only what your app needs.
+:::
 
-NIPs are standards documents hosted at [github.com/nostr-protocol/nips](https://github.com/nostr-protocol/nips). They define:
+## How NIPs are labelled
 
-- Core protocol behavior
-- Event kinds and their formats
-- Optional features and extensions
-- Best practices for implementations
+Each NIP has badges under its title:
 
-## NIP Categories
+- **`draft`** or **`final`**: almost every NIP is `draft`, including NIP-01. Only a few, such as 02 and 05, are `final`. "Draft" doesn't mean unused: most of the protocol in daily use is draft.
+- **`mandatory`** or **`optional`**: only NIP-01 is mandatory.
+- **`relay`**: the NIP needs relay support, not just client support.
 
-### Core Protocol
+Separately, the README's list marks some NIPs **unrecommended** (struck through, with a reason). Those are the ones to avoid; see [below](#dont-build-on-these).
 
-| NIP | Title | Description |
-|-----|-------|-------------|
-| [NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md) | Basic Protocol | Fundamental protocol definition |
-| [NIP-02](https://github.com/nostr-protocol/nips/blob/master/02.md) | Follow List | Contact list and petnames |
-| [NIP-10](https://github.com/nostr-protocol/nips/blob/master/10.md) | Reply Threading | Conventions for replies |
+NIP-12, 16, 20 and 33 have been merged into NIP-01. A relay's `supported_nips` list shouldn't need to mention them.
 
-### Identity & Keys
+## Where to start, by app
 
-| NIP | Title | Description |
-|-----|-------|-------------|
-| [NIP-05](https://github.com/nostr-protocol/nips/blob/master/05.md) | DNS-Based Verification | Mapping identifiers to pubkeys |
-| [NIP-19](https://github.com/nostr-protocol/nips/blob/master/19.md) | Bech32 Entities | Human-readable key encoding |
-| [NIP-46](https://github.com/nostr-protocol/nips/blob/master/46.md) | Nostr Connect | Remote signing protocol |
+| Building… | Start with |
+|---|---|
+| **Any client** | [01](https://github.com/nostr-protocol/nips/blob/master/01.md) protocol · [19](https://github.com/nostr-protocol/nips/blob/master/19.md) `npub`/`nevent`/`naddr` · [21](https://github.com/nostr-protocol/nips/blob/master/21.md) `nostr:` URIs · [65](https://github.com/nostr-protocol/nips/blob/master/65.md) relay lists · [11](https://github.com/nostr-protocol/nips/blob/master/11.md) relay info |
+| **Login** | [07](https://github.com/nostr-protocol/nips/blob/master/07.md) browser signer · [46](https://github.com/nostr-protocol/nips/blob/master/46.md) Nostr Remote Signing · [55](https://github.com/nostr-protocol/nips/blob/master/55.md) Android signer · [49](https://github.com/nostr-protocol/nips/blob/master/49.md) `ncryptsec` |
+| **Social** | [02](https://github.com/nostr-protocol/nips/blob/master/02.md) follows · [10](https://github.com/nostr-protocol/nips/blob/master/10.md) threads · [18](https://github.com/nostr-protocol/nips/blob/master/18.md) reposts · [22](https://github.com/nostr-protocol/nips/blob/master/22.md) comments · [25](https://github.com/nostr-protocol/nips/blob/master/25.md) reactions · [27](https://github.com/nostr-protocol/nips/blob/master/27.md) mentions · [51](https://github.com/nostr-protocol/nips/blob/master/51.md) lists · [05](https://github.com/nostr-protocol/nips/blob/master/05.md) handles |
+| **Private messages** | [17](https://github.com/nostr-protocol/nips/blob/master/17.md) DMs · [44](https://github.com/nostr-protocol/nips/blob/master/44.md) encryption · [59](https://github.com/nostr-protocol/nips/blob/master/59.md) gift wrap · group chat: [Marmot](https://github.com/marmot-protocol/marmot) (MLS) |
+| **Chat and communities** | [29](https://github.com/nostr-protocol/nips/blob/master/29.md) relay-based groups · [C7](https://github.com/nostr-protocol/nips/blob/master/C7.md) chats · [7D](https://github.com/nostr-protocol/nips/blob/master/7D.md) forum threads |
+| **Long-form** | [23](https://github.com/nostr-protocol/nips/blob/master/23.md) articles · [22](https://github.com/nostr-protocol/nips/blob/master/22.md) comments · [57](https://github.com/nostr-protocol/nips/blob/master/57.md) zaps |
+| **Media** | [B7](https://github.com/nostr-protocol/nips/blob/master/B7.md) + [Blossom](https://github.com/hzrd149/blossom) uploads · [92](https://github.com/nostr-protocol/nips/blob/master/92.md) `imeta` · [68](https://github.com/nostr-protocol/nips/blob/master/68.md) pictures · [71](https://github.com/nostr-protocol/nips/blob/master/71.md) video |
+| **Payments** | [57](https://github.com/nostr-protocol/nips/blob/master/57.md) zaps · [47](https://github.com/nostr-protocol/nips/blob/master/47.md) Wallet Connect · [60](https://github.com/nostr-protocol/nips/blob/master/60.md) / [61](https://github.com/nostr-protocol/nips/blob/master/61.md) Cashu wallet and nutzaps |
+| **A relay** | [01](https://github.com/nostr-protocol/nips/blob/master/01.md) · [11](https://github.com/nostr-protocol/nips/blob/master/11.md) · [42](https://github.com/nostr-protocol/nips/blob/master/42.md) auth · [45](https://github.com/nostr-protocol/nips/blob/master/45.md) count · [62](https://github.com/nostr-protocol/nips/blob/master/62.md) vanish · [70](https://github.com/nostr-protocol/nips/blob/master/70.md) protected events · [77](https://github.com/nostr-protocol/nips/blob/master/77.md) sync · [86](https://github.com/nostr-protocol/nips/blob/master/86.md) management API |
+| **HTTP services** | [98](https://github.com/nostr-protocol/nips/blob/master/98.md) HTTP auth · [05](https://github.com/nostr-protocol/nips/blob/master/05.md) `nostr.json` |
 
-### Content Types
+## How NIPs build on each other
 
-| NIP | Title | Description |
-|-----|-------|-------------|
-| [NIP-23](https://github.com/nostr-protocol/nips/blob/master/23.md) | Long-form Content | Articles and blog posts |
-| [NIP-30](https://github.com/nostr-protocol/nips/blob/master/30.md) | Custom Emoji | Custom emoji in events |
-| [NIP-94](https://github.com/nostr-protocol/nips/blob/master/94.md) | File Metadata | File attachments |
+NIPs often reuse others. Some links worth knowing:
 
-### Encryption & Security
+- **NIP-17** DMs use NIP-44 encryption inside NIP-59 seals and gift wraps, sent to the relays in the recipient's kind 10050 list. Relays should serve gift wraps only after NIP-42 AUTH.
+- **NIP-46** remote signing sends its kind 24133 messages encrypted with NIP-44.
+- **NIP-57** zaps need the recipient's Lightning address (`lud16`, from the kind 0 profile, [NIP-24](https://github.com/nostr-protocol/nips/blob/master/24.md)) and an LNURL server that supports Nostr. They don't depend on any relay feature.
+- **NIP-65** relay lists are what make reading other people's notes reliable. Most other features assume you know where users publish.
 
-| NIP | Title | Description |
-|-----|-------|-------------|
-| [NIP-04](https://github.com/nostr-protocol/nips/blob/master/04.md) | Encrypted DMs | Direct messages (deprecated) |
-| [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md) | Authentication | Client-relay auth |
-| [NIP-44](https://github.com/nostr-protocol/nips/blob/master/44.md) | Versioned Encryption | Modern encryption standard |
+## Don't build on these
 
-### Social Features
+These are marked **unrecommended** in the NIPs README:
 
-| NIP | Title | Description |
-|-----|-------|-------------|
-| [NIP-25](https://github.com/nostr-protocol/nips/blob/master/25.md) | Reactions | Likes and emoji reactions |
-| [NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md) | Zaps | Lightning payments |
-| [NIP-51](https://github.com/nostr-protocol/nips/blob/master/51.md) | Lists | Mute lists, bookmarks, etc. |
+| NIP | README's reason | Use instead |
+|---|---|---|
+| 03 OpenTimestamps | Vulnerable to one specific attack, needs update | — |
+| 04 Encrypted DMs | Deprecated in favour of 17 | **17** + 44 + 59 |
+| 06 Keys from a seed phrase | Prefer a single nsec | One nsec, backed up with **49** |
+| 08 Handling mentions | Deprecated in favour of 27 | **27** |
+| 15 Marketplace | Too complicated | **99** classified listings |
+| 26 Delegated signing | Unnecessary burden for little gain | **46** remote signing |
+| 28 Public chat | — | **29** relay-based groups |
+| 31 Unknown events | Unnecessarily bloated | — |
+| 72 Moderated communities | — | **29** relay-based groups |
+| 90 Data Vending Machines | Got out of control | Use-case-specific microstandards |
+| 96 HTTP file storage | Replaced by Blossom | **B7** Blossom |
+| BE BLE communications | Implemented once, unclear whether it works | — |
+| EE MLS messaging | Superseded by Marmot | [Marmot](https://github.com/marmot-protocol/marmot) |
 
-### Relay Features
+You'll still meet old events of these kinds (kind 4 DMs, for example), so a client may want to read them. Don't write new ones.
 
-| NIP | Title | Description |
-|-----|-------|-------------|
-| [NIP-11](https://github.com/nostr-protocol/nips/blob/master/11.md) | Relay Information | Relay metadata document |
-| [NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md) | Authentication | Relay authentication |
-| [NIP-65](https://github.com/nostr-protocol/nips/blob/master/65.md) | Relay List Metadata | User's relay preferences |
+## Recent changes
 
-## Essential NIPs
+The wiki's [Protocol basics](https://github.com/nostrcg/devguide/wiki/Protocol-Basics) keeps a short changelog. Highlights from 2024 to 2026:
 
-### NIP-01: Basic Protocol
+- NIP-01 dropped prefix matching in filters (exact 64-char hex only) and says empty filter lists match nothing.
+- NIP-07 added `nip44.*`, deprecated `nip04.*`, and has no `getRelays()`: read kind 10002 instead.
+- NIP-17 replaced NIP-04 for private messages, and Blossom replaced NIP-96 for files.
+- Kind 1111 comments (NIP-22) work on any root. "Parameterized replaceable" events are now called addressable.
+- New NIPs include [67](https://github.com/nostr-protocol/nips/blob/master/67.md) (an `EOSE` completeness hint), [5A](https://github.com/nostr-protocol/nips/blob/master/5A.md) (static sites), [85](https://github.com/nostr-protocol/nips/blob/master/85.md) (trusted assertions) and [43](https://github.com/nostr-protocol/nips/blob/master/43.md) (relay access requests).
 
-Defines the core protocol:
-- Event structure and signing
-- WebSocket message formats
-- Filter syntax
-- Relay behavior
+## Reading and following NIPs
 
-Every implementation must support NIP-01.
+- **[nips.nostr.com](https://nips.nostr.com)** is a searchable viewer of the repository.
+- **[nostrbook.dev](https://nostrbook.dev)** is a reference of kinds, tags and NIPs.
+- **`nak nip 17`** prints a NIP in your terminal, and **`nak kind 30023`** describes a kind.
+- To follow changes, use GitHub's **Watch** button on the repository (Custom → Pull requests), or clone it and read `git log`. Most discussion happens in pull requests.
+- New NIPs start as pull requests. The README's "Criteria for acceptance" section says what a new NIP needs, including implementations in at least two clients and one relay where it applies.
 
-### NIP-19: Bech32 Entities
+## See also
 
-Defines human-readable encodings:
-
-```
-npub1...  → Public key
-nsec1...  → Private key (never share!)
-note1...  → Event ID
-nprofile1...  → Profile + relay hints
-nevent1...  → Event + relay hints
-naddr1...  → Replaceable event address
-```
-
-Example:
-```javascript
-import { nip19 } from 'nostr-tools';
-
-// Encode
-const npub = nip19.npubEncode(pubkeyHex);
-
-// Decode
-const { type, data } = nip19.decode(npub);
-```
-
-### NIP-05: DNS Verification
-
-Maps human-readable identifiers to pubkeys:
-
-`alice@example.com` → looks up `https://example.com/.well-known/nostr.json`
-
-```json
-{
-  "names": {
-    "alice": "pubkey-hex-here"
-  },
-  "relays": {
-    "pubkey-hex-here": ["wss://relay.example.com"]
-  }
-}
-```
-
-### NIP-57: Zaps (Lightning Payments)
-
-Enables Lightning payments integrated with events:
-
-1. Client creates kind 9734 zap request
-2. Sends to recipient's LNURL endpoint
-3. User pays invoice
-4. Wallet service creates kind 9735 zap receipt
-
-## NIP Statuses
-
-NIPs have different maturity levels:
-
-| Status | Meaning |
-|--------|---------|
-| **Draft** | Work in progress |
-| **Final** | Stable, implemented |
-| **Deprecated** | Superseded by newer NIP |
-
-## Implementing NIPs
-
-### Check Requirements
-
-Some NIPs depend on others:
-- NIP-57 (Zaps) requires NIP-01, NIP-09
-- NIP-46 (Connect) requires NIP-01, NIP-44
-
-### Graceful Degradation
-
-Not all relays/clients support all NIPs:
-
-```javascript
-// Check if NIP-07 extension is available
-if (window.nostr) {
-  const event = await window.nostr.signEvent(unsignedEvent);
-} else {
-  // Fallback: use local key
-  const event = finalizeEvent(unsignedEvent, secretKey);
-}
-```
-
-### Feature Detection
-
-Query relay capabilities:
-
-```javascript
-const response = await fetch('https://relay.example.com/', {
-  headers: { Accept: 'application/nostr+json' }
-});
-const info = await response.json();
-console.log(info.supported_nips); // [1, 11, 42, ...]
-```
-
-## Common NIP Combinations
-
-### Social Client
-
-Essential:
-- NIP-01 (Core)
-- NIP-02 (Follows)
-- NIP-10 (Threading)
-- NIP-19 (Encoding)
-
-Recommended:
-- NIP-05 (Verification)
-- NIP-25 (Reactions)
-- NIP-57 (Zaps)
-
-### Chat Application
-
-Essential:
-- NIP-01 (Core)
-- NIP-44 (Encryption)
-
-Recommended:
-- NIP-19 (Encoding)
-- NIP-42 (Auth)
-
-### Long-form Platform
-
-Essential:
-- NIP-01 (Core)
-- NIP-23 (Articles)
-
-Recommended:
-- NIP-05 (Verification)
-- NIP-57 (Zaps)
-- NIP-94 (Media)
-
-## Keeping Up to Date
-
-The NIPs repository is actively developed:
-
-```bash
-# Watch the repository
-gh repo star nostr-protocol/nips
-```
-
-Follow these resources:
-- [NIPs GitHub](https://github.com/nostr-protocol/nips)
-- [Nostr.how](https://nostr.how)
-- Nostr clients for protocol discussions
-
-## See Also
-
-- [Official NIPs Repository](https://github.com/nostr-protocol/nips)
-- [Event Kinds Reference](./kinds)
-- [NIP Implementation Guide](../guides/nip-implementation)
+- [Event kinds](./kinds.md): the kinds these NIPs define.
+- [NIP implementation guide](../guides/nip-implementation.md): working through common NIPs in code.

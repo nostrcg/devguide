@@ -42,44 +42,44 @@ type FeatureItem = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'Decentralized by Design',
+    title: 'No Central Server',
     description:
-      'No central server, no single point of failure. Nostr is a simple, open protocol for truly censorship-resistant global networks.',
+      'Users publish to the relays they choose and clients read from many at once. If one relay drops you, your followers can still find you on another.',
     link: '/protocol/overview',
     icon: '🌐',
   },
   {
     title: 'Cryptographic Identity',
     description:
-      'Your identity is your keypair. No email, no phone number, no permission needed. Just generate keys and start publishing.',
+      'An identity is a secp256k1 keypair. Every event is signed, so any client can check who wrote it. Apps should ask a signer for signatures, not for the secret key.',
     link: '/getting-started/keys-and-signing',
     icon: '🔐',
   },
   {
-    title: 'Simple Protocol',
+    title: 'Small Core Protocol',
     description:
-      'JSON events over WebSocket. That\'s it. The protocol is intentionally minimal, making it easy to implement in any language.',
+      'The core, NIP-01, is signed JSON events sent over WebSocket. It is small enough to implement from scratch in most languages.',
     link: '/protocol/events',
     icon: '⚡',
   },
   {
     title: 'Extensible via NIPs',
     description:
-      'Nostr Improvement Proposals (NIPs) define optional features. Build what you need without breaking compatibility.',
+      'NIPs (Nostr Implementation Possibilities) describe optional features: private DMs, zaps, lists, groups, media and more. Implement only the ones your app needs.',
     link: '/protocol/nips',
     icon: '🧩',
   },
   {
-    title: 'Multi-Language Support',
+    title: 'Libraries in Many Languages',
     description:
-      'Libraries available in JavaScript, Rust, Python, Go, and more. Pick your favorite language and start building.',
+      'nostr-tools for JavaScript, Nostr Dev Kit for Rust and its bindings, nostr-sdk for Python, fiatjaf.com/nostr for Go, and more.',
     link: '/libraries/overview',
     icon: '📚',
   },
   {
-    title: 'Active Ecosystem',
+    title: 'Clients and Tools',
     description:
-      'Social clients, payment systems, marketplaces, and more. Join a thriving community of builders.',
+      'Social clients, signers, relays, media servers and developer tools to build on and test against.',
     link: '/ecosystem/clients',
     icon: '🚀',
   },
@@ -126,30 +126,37 @@ function QuickLinks() {
             <span className={styles.quickLinkIcon}>🛠️</span>
             <div>
               <strong>Build Your First App</strong>
-              <p>Step-by-step tutorial to create a Nostr client</p>
+              <p>Read and publish notes with nostr-tools, step by step</p>
             </div>
           </Link>
           <a href="https://github.com/nostr-protocol/nips" className={styles.quickLink}>
             <span className={styles.quickLinkIcon}>📋</span>
             <div>
               <strong>NIPs Repository</strong>
-              <p>Official Nostr Improvement Proposals</p>
+              <p>The Nostr Implementation Possibilities, upstream</p>
             </div>
           </a>
           <Link to="/relays/overview" className={styles.quickLink}>
             <span className={styles.quickLinkIcon}>🔌</span>
             <div>
               <strong>Run a Relay</strong>
-              <p>Set up your own Nostr relay server</p>
+              <p>Pick relay software and deploy it</p>
             </div>
           </Link>
           <Link to="/libraries/javascript" className={styles.quickLink}>
             <span className={styles.quickLinkIcon}>📦</span>
             <div>
-              <strong>JavaScript SDK</strong>
+              <strong>JavaScript</strong>
               <p>nostr-tools and other JS libraries</p>
             </div>
           </Link>
+          <a href="https://github.com/nostrcg/devguide/wiki" className={styles.quickLink}>
+            <span className={styles.quickLinkIcon}>🧰</span>
+            <div>
+              <strong>Wiki</strong>
+              <p>Tested recipes: nak, snippets, reverse proxies</p>
+            </div>
+          </a>
         </div>
       </div>
     </section>
@@ -161,7 +168,7 @@ export default function Home(): ReactNode {
   return (
     <Layout
       title="Home"
-      description="Comprehensive developer documentation for building on the Nostr protocol - the decentralized social protocol">
+      description="Developer documentation for building clients, relays and tools on the Nostr protocol">
       <HomepageHeader />
       <main>
         <HomepageFeatures />

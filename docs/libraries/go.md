@@ -1,365 +1,238 @@
 ---
 sidebar_position: 5
 title: Go Libraries
-description: Nostr libraries for Go development
+description: fiatjaf.com/nostr, the successor to go-nostr, with khatru for relays
 ---
 
 # Go Libraries
 
-Go is excellent for building high-performance Nostr relays and backend services.
+Use **[fiatjaf.com/nostr](https://pkg.go.dev/fiatjaf.com/nostr)**. It replaces go-nostr and bundles the relay framework khatru, event stores and helpers for most NIPs as subpackages.
 
-## go-nostr
+| Module | Status |
+|---|---|
+| `fiatjaf.com/nostr`: client, relay pool, keys, NIP packages (`nip19`, `nip44`, `nip17`, `nip46`…) | 🟢 untagged, updated Oct 2026 |
+| `fiatjaf.com/nostr/khatru`: framework for writing relays | 🟢 |
+| `fiatjaf.com/nostr/eventstore/...`: storage (LMDB, BoltDB, Bleve, in-memory) | 🟢 |
+| `fiatjaf.com/nostr/sdk`: caching, profile loading, outbox relay selection | 🟢 |
+| [github.com/nbd-wtf/go-nostr](https://github.com/nbd-wtf/go-nostr) | 🔴 archived Nov 2025 |
+| [github.com/fiatjaf/khatru](https://github.com/fiatjaf/khatru) | 🔴 archived Sep 2025 |
 
-The primary Go library for Nostr development.
+The code is not on GitHub. It is hosted on Nostr-native git; browse it at [gitworkshop.dev](https://gitworkshop.dev/fiatjaf.com/nostrlib) or read the API on [pkg.go.dev](https://pkg.go.dev/fiatjaf.com/nostr).
 
-**Install:**
+:::caution Not a drop-in for go-nostr
+The API changed: keys are typed (`nostr.SecretKey`, `nostr.PubKey`, `nostr.ID` are byte arrays, not hex strings), kinds are `nostr.Kind`, `Pool` replaces `SimplePool`, and methods take one `Filter` instead of `Filters`. go-nostr examples will not compile.
+:::
+
+## Install
+
+There are no semver tags yet, so `@master` resolves to a pseudo-version. Commit `go.sum` and upgrade on purpose.
+
 ```bash
-go get github.com/nbd-wtf/go-nostr
+go get fiatjaf.com/nostr@master
 ```
 
-**Repository:** [github.com/nbd-wtf/go-nostr](https://github.com/nbd-wtf/go-nostr)
+The module needs Go 1.25 or newer. The examples below were built with Go 1.27.3 against the 21 Oct 2026 pseudo-version (`v0.0.0-20261021183943-35ed1794ff30`) and run against `nak serve` (`ws://localhost:10547`) or live relays.
 
-### Key Generation
+## Publish and read back
 
 ```go
 package main
 
 import (
-    "fmt"
-    "github.com/nbd-wtf/go-nostr"
-    "github.com/nbd-wtf/go-nostr/nip19"
+	"context"
+	"fmt"
+	"time"
+
+	"fiatjaf.com/nostr"
 )
 
 func main() {
-    // Generate new keypair
-    sk := nostr.GeneratePrivateKey()
-    pk, _ := nostr.GetPublicKey(sk)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-    // Encode to bech32
-    nsec, _ := nip19.EncodePrivateKey(sk)
-    npub, _ := nip19.EncodePublicKey(pk)
+	relays := []string{"ws://localhost:10547"}
 
-    fmt.Printf("Private key (nsec): %s\n", nsec)
-    fmt.Printf("Public key (npub): %s\n", npub)
+	// A throwaway key. Never hard-code a real nsec.
+	sk := nostr.Generate()
+	pk := sk.Public()
+
+	evt := nostr.Event{
+		Kind:      nostr.KindTextNote,
+		CreatedAt: nostr.Now(),
+		Tags:      nostr.Tags{},
+		Content:   "hello from fiatjaf.com/nostr",
+	}
+	// Sign sets PubKey, ID and Sig
+	if err := evt.Sign(sk); err != nil {
+		panic(err)
+	}
+
+	pool := nostr.NewPool()
+
+	// Publish: one result per relay
+	for res := range pool.PublishMany(ctx, relays, evt) {
+		if res.Error != nil {
+			fmt.Println("failed", res.RelayURL, res.Error)
+		} else {
+			fmt.Println("published to", res.RelayURL)
+		}
+	}
+
+	// Fetch: the channel closes after every relay sends EOSE
+	filter := nostr.Filter{Kinds: []nostr.Kind{nostr.KindTextNote}, Authors: []nostr.PubKey{pk}, Limit: 10}
+	for ie := range pool.FetchMany(ctx, relays, filter, nostr.SubscriptionOptions{}) {
+		fmt.Println(ie.Relay.URL, ie.Event.Content)
+	}
 }
 ```
 
-### Creating Events
+`PublishMany` returns a channel with one `PublishResult` per relay, closed when all have answered. `FetchMany` ends at EOSE; `SubscribeMany` stays open.
+
+## Subscribe to new events
 
 ```go
 package main
 
 import (
-    "github.com/nbd-wtf/go-nostr"
-    "time"
+	"context"
+	"fmt"
+	"time"
+
+	"fiatjaf.com/nostr"
 )
 
 func main() {
-    sk := nostr.GeneratePrivateKey()
-    pk, _ := nostr.GetPublicKey(sk)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
-    event := nostr.Event{
-        PubKey:    pk,
-        CreatedAt: nostr.Timestamp(time.Now().Unix()),
-        Kind:      1,
-        Tags:      nostr.Tags{
-            {"t", "nostr"},
-            {"t", "golang"},
-        },
-        Content:   "Hello from Go!",
-    }
+	relays := []string{"wss://relay.primal.net", "wss://relay.nostr.net"}
+	pool := nostr.NewPool()
 
-    // Sign the event
-    event.Sign(sk)
+	// Only new notes. The pool drops duplicates seen on several relays.
+	filter := nostr.Filter{Kinds: []nostr.Kind{nostr.KindTextNote}, Since: nostr.Now()}
 
-    fmt.Printf("Event ID: %s\n", event.ID)
-    fmt.Printf("Event JSON: %s\n", event.String())
+	seen := 0
+	for ie := range pool.SubscribeMany(ctx, relays, filter, nostr.SubscriptionOptions{}) {
+		fmt.Printf("%s %s: %.60q\n", ie.Relay.URL, ie.Event.PubKey.Hex()[:8], ie.Event.Content)
+		seen++
+		if seen == 5 {
+			cancel() // closes the subscriptions
+		}
+	}
 }
 ```
 
-### Connecting to Relays
+## Keys, NIP-19 and verification
 
 ```go
 package main
 
 import (
-    "context"
-    "fmt"
-    "github.com/nbd-wtf/go-nostr"
+	"fmt"
+
+	"fiatjaf.com/nostr"
+	"fiatjaf.com/nostr/nip19"
 )
 
 func main() {
-    ctx := context.Background()
+	sk := nostr.Generate()
+	pk := sk.Public()
+	fmt.Println("hex pubkey:", pk.Hex())
+	fmt.Println("npub:", nip19.EncodeNpub(pk))
 
-    relay, err := nostr.RelayConnect(ctx, "wss://relay.damus.io")
-    if err != nil {
-        panic(err)
-    }
-    defer relay.Close()
+	// Decode returns a prefix and a typed value
+	jb55 := nostr.MustPubKeyFromHex("32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245")
+	nprofile := nip19.EncodeNprofile(jb55, []string{"wss://relay.primal.net"})
+	prefix, value, err := nip19.Decode(nprofile)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(prefix, value.(nostr.ProfilePointer).PublicKey.Hex())
 
-    fmt.Printf("Connected to %s\n", relay.URL)
+	// Check a signature before you trust an event
+	evt := nostr.Event{Kind: nostr.KindTextNote, CreatedAt: nostr.Now(), Content: "test"}
+	if err := evt.Sign(sk); err != nil {
+		panic(err)
+	}
+	fmt.Println("valid id:", evt.CheckID(), "valid sig:", evt.VerifySignature())
 }
 ```
 
-### Publishing Events
+`SecretKeyFromHex` and `PubKeyFromHex` parse hex and return an error; the `Must…` variants panic. Use `nip19.Decode` for anything that starts with `npub`, `nsec`, `nevent`, `nprofile` or `naddr`.
 
-```go
-func publishEvent(ctx context.Context, event nostr.Event) error {
-    relay, err := nostr.RelayConnect(ctx, "wss://relay.damus.io")
-    if err != nil {
-        return err
-    }
-    defer relay.Close()
-
-    err = relay.Publish(ctx, event)
-    if err != nil {
-        return fmt.Errorf("failed to publish: %w", err)
-    }
-
-    fmt.Println("Event published successfully")
-    return nil
-}
-```
-
-### Subscribing to Events
+## NIP-44 encryption
 
 ```go
 package main
 
 import (
-    "context"
-    "fmt"
-    "github.com/nbd-wtf/go-nostr"
+	"fmt"
+
+	"fiatjaf.com/nostr"
+	"fiatjaf.com/nostr/nip44"
 )
 
 func main() {
-    ctx := context.Background()
+	alice, bob := nostr.Generate(), nostr.Generate()
 
-    relay, err := nostr.RelayConnect(ctx, "wss://relay.damus.io")
-    if err != nil {
-        panic(err)
-    }
-    defer relay.Close()
+	// Both sides derive the same conversation key
+	key, _ := nip44.GenerateConversationKey(bob.Public(), alice)
+	payload, err := nip44.Encrypt("hi bob", key)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(payload)
 
-    // Create filter
-    filters := []nostr.Filter{{
-        Kinds: []int{1},
-        Limit: 10,
-    }}
-
-    // Subscribe
-    sub, err := relay.Subscribe(ctx, filters)
-    if err != nil {
-        panic(err)
-    }
-
-    // Handle events
-    for ev := range sub.Events {
-        fmt.Printf("Event from %s: %s\n", ev.PubKey[:8], ev.Content)
-    }
+	key2, _ := nip44.GenerateConversationKey(alice.Public(), bob)
+	plaintext, err := nip44.Decrypt(payload, key2)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(plaintext)
 }
 ```
 
-### Multi-Relay Connection
+For NIP-17 private messages, see the `fiatjaf.com/nostr/nip17` and `nip59` packages. Don't use `nip04` for anything new.
+
+## A minimal relay with khatru
 
 ```go
 package main
 
 import (
-    "context"
-    "github.com/nbd-wtf/go-nostr"
+	"fmt"
+	"net/http"
+
+	"fiatjaf.com/nostr/eventstore/slicestore"
+	"fiatjaf.com/nostr/khatru"
 )
 
 func main() {
-    ctx := context.Background()
+	relay := khatru.NewRelay()
+	relay.Info.Name = "my test relay"
 
-    relayURLs := []string{
-        "wss://relay.damus.io",
-        "wss://nos.lol",
-        "wss://relay.nostr.band",
-    }
+	// In-memory storage; use eventstore/lmdb for something that persists
+	db := &slicestore.SliceStore{}
+	if err := db.Init(); err != nil {
+		panic(err)
+	}
+	relay.UseEventstore(db, 500)
 
-    pool := nostr.NewSimplePool(ctx)
-
-    // Subscribe across all relays
-    filters := []nostr.Filter{{
-        Kinds: []int{1},
-        Limit: 20,
-    }}
-
-    for ev := range pool.SubManyEose(ctx, relayURLs, filters) {
-        fmt.Printf("From %s: %s\n", ev.Relay.URL, ev.Event.Content)
-    }
+	fmt.Println("running on ws://localhost:3334")
+	http.ListenAndServe(":3334", relay)
 }
 ```
 
-### Verifying Events
+Test it:
 
-```go
-func verifyEvent(event nostr.Event) bool {
-    // Check ID
-    if !event.CheckID() {
-        return false
-    }
-
-    // Check signature
-    ok, err := event.CheckSignature()
-    if err != nil || !ok {
-        return false
-    }
-
-    return true
-}
+```bash
+nak event -c 'hello' ws://localhost:3334
+nak req -k 1 ws://localhost:3334
+curl -H 'Accept: application/nostr+json' http://localhost:3334
 ```
 
-### NIP-19 Encoding/Decoding
+The NIP-11 response lists `supported_nips` and `"software":"https://pkg.go.dev/fiatjaf.com/nostr/khatru"`. For persistent storage use `fiatjaf.com/nostr/eventstore/lmdb`; for policies (rejecting kinds, requiring AUTH) see the [khatru package docs](https://pkg.go.dev/fiatjaf.com/nostr/khatru) and [Relay Implementations](../relays/implementations.md).
 
-```go
-import "github.com/nbd-wtf/go-nostr/nip19"
-
-// Encode
-nsec, _ := nip19.EncodePrivateKey(sk)
-npub, _ := nip19.EncodePublicKey(pk)
-note, _ := nip19.EncodeNote(eventID)
-
-// Encode with relay hints
-nprofile, _ := nip19.EncodeProfile(pk, []string{"wss://relay.example.com"})
-nevent, _ := nip19.EncodeEvent(eventID, []string{"wss://relay.example.com"}, pk)
-
-// Decode
-prefix, data, _ := nip19.Decode(npub)
-// prefix = "npub", data = hex pubkey
-
-// Decode profile
-_, profile, _ := nip19.Decode(nprofile)
-// profile.PublicKey, profile.Relays
-```
-
-### Building a Simple Relay
-
-```go
-package main
-
-import (
-    "github.com/nbd-wtf/go-nostr"
-    "github.com/nbd-wtf/go-nostr/relayer"
-    "log"
-)
-
-type MyRelay struct {
-    storage map[string]nostr.Event
-}
-
-func (r *MyRelay) Name() string {
-    return "my-relay"
-}
-
-func (r *MyRelay) Init() error {
-    r.storage = make(map[string]nostr.Event)
-    return nil
-}
-
-func (r *MyRelay) AcceptEvent(ctx context.Context, event *nostr.Event) bool {
-    // Accept all events
-    return true
-}
-
-func (r *MyRelay) SaveEvent(ctx context.Context, event *nostr.Event) error {
-    r.storage[event.ID] = *event
-    return nil
-}
-
-func (r *MyRelay) QueryEvents(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error) {
-    ch := make(chan *nostr.Event)
-    go func() {
-        for _, event := range r.storage {
-            if filter.Matches(&event) {
-                ch <- &event
-            }
-        }
-        close(ch)
-    }()
-    return ch, nil
-}
-
-func main() {
-    relay := &MyRelay{}
-    server, _ := relayer.NewServer(relay)
-    log.Fatal(server.Start("0.0.0.0", 7777))
-}
-```
-
-### Webhook/HTTP Service Example
-
-```go
-package main
-
-import (
-    "encoding/json"
-    "net/http"
-    "github.com/nbd-wtf/go-nostr"
-)
-
-var sk = nostr.GeneratePrivateKey()
-
-func postNoteHandler(w http.ResponseWriter, r *http.Request) {
-    var req struct {
-        Content string `json:"content"`
-    }
-
-    json.NewDecoder(r.Body).Decode(&req)
-
-    pk, _ := nostr.GetPublicKey(sk)
-    event := nostr.Event{
-        PubKey:    pk,
-        CreatedAt: nostr.Now(),
-        Kind:      1,
-        Content:   req.Content,
-    }
-    event.Sign(sk)
-
-    // Publish to relay
-    ctx := r.Context()
-    relay, _ := nostr.RelayConnect(ctx, "wss://relay.damus.io")
-    defer relay.Close()
-
-    relay.Publish(ctx, event)
-
-    json.NewEncoder(w).Encode(map[string]string{
-        "id": event.ID,
-    })
-}
-
-func main() {
-    http.HandleFunc("/post", postNoteHandler)
-    http.ListenAndServe(":8080", nil)
-}
-```
-
-## Best Practices
-
-1. **Use context** for cancellation and timeouts:
-   ```go
-   ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-   defer cancel()
-   ```
-
-2. **Handle relay disconnections:**
-   ```go
-   relay.OnDisconnect = func() {
-       log.Println("Disconnected, reconnecting...")
-       // Implement reconnection logic
-   }
-   ```
-
-3. **Use connection pooling** for multiple relays
-
-4. **Verify events** before processing
-
-5. **Rate limit** your publishing
-
-## See Also
-
-- [go-nostr GitHub](https://github.com/nbd-wtf/go-nostr)
-- [Go Relay Implementations](../relays/implementations)
-- [Running Relays Guide](../relays/running-a-relay)
+:::note
+nak, the Nostr command-line tool, is built on this library. Its source is a good place to see the API used for real: [github.com/fiatjaf/nak](https://github.com/fiatjaf/nak).
+:::

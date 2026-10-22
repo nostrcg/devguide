@@ -6,144 +6,74 @@ description: Understanding Nostr relays and their role in the network
 
 # Relays Overview
 
-Relays are the backbone of the Nostr network. They store and forward events between clients, enabling decentralized communication.
-
-## What is a Relay?
-
-A relay is a WebSocket server that:
-
-- Accepts connections from clients
-- Receives, validates, and stores events
-- Responds to subscription requests (filters)
-- Forwards matching events to subscribers
-- Implements access and moderation policies
+A relay is a WebSocket server that accepts signed events from clients, stores some of them, and sends them to clients whose subscriptions match. Relays don't talk to each other unless an operator sets that up. Clients pick which relays to read from and write to.
 
 ![Relay Network Topology](/img/diagrams/relay-topology.svg)
 
-## Why Multiple Relays?
+The message formats (`EVENT`, `REQ`, `CLOSE`, `OK`, `EOSE`, `CLOSED`, `NOTICE`) are on [Relay Communication](../protocol/relay-communication.md). This section is about choosing, running and operating relays.
 
-Users typically connect to multiple relays for:
+## What NIP-01 asks of a relay
 
-| Reason | Description |
-|--------|-------------|
-| **Redundancy** | If one relay goes down, others continue working |
-| **Reach** | Different relays have different users |
-| **Privacy** | Spread your metadata across relays |
-| **Speed** | Geographic distribution for lower latency |
-| **Features** | Some relays offer unique capabilities |
+- Answer every `EVENT` with an `OK`: `true` if accepted, `false` plus a prefixed reason (`blocked:`, `rate-limited:`, `invalid:`, `pow:`, `restricted:`, `mute:`, `error:`). A `duplicate:` reply comes with `true`.
+- Send stored matches for a `REQ`, then `EOSE`, then keep the subscription open for new events.
+- Send `CLOSED` with a reason when it refuses a `REQ` or ends a subscription itself.
+- Treat an empty filter list (`"authors": []`) as matching nothing.
+- Keep only the newest version of replaceable (0, 3, 10000–19999) and addressable (30000–39999) events.
 
-## Relay Types
+NIP-01 says regular events are "expected to be stored", but relays decide what they keep and for how long. Rate limits, auth ([NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md)), payment, kind allowlists and deleting old events are all up to the operator. A relay must never change an event: the signature would break.
 
-### Public Relays
+## Why clients use several relays
 
-Open to all users, free to read and write.
+| Reason | What it means |
+|---|---|
+| Redundancy | If one relay is down or deletes your notes, copies exist elsewhere. |
+| Reach | Your followers read from their relays, not yours. NIP-65 tells them where to look. |
+| Features | Search (NIP-50), negentropy sync (NIP-77), groups (NIP-29) and media are offered by some relays only. |
 
-- **Pros:** Easy to use, wide reach
-- **Cons:** Potential spam, may have rate limits
+Each extra relay also sees your IP address and what you ask for. More relays means more redundancy, not more privacy.
 
-### Paid Relays
+## Kinds of relay
 
-Require payment for write access (sometimes read too).
+- **Public**: anyone can read and write. Most have rate limits and spam filters.
+- **Paid**: you pay once or by subscription to write. nostream supports this out of the box.
+- **Personal**: one owner writes; others may read or send to an inbox. HAVEN and chorus work this way.
+- **Community or invite-only**: members only, often through NIP-42 auth or NIP-43 membership. pyramid and zooid do this.
+- **Special purpose**: indexers that collect profiles and relay lists (`wss://purplepag.es`), search relays, monitors that publish NIP-66 reports.
 
-- **Pros:** Higher quality, less spam
-- **Cons:** Requires payment
+Software for each is on [Relay Implementations](./implementations.md).
 
-### Private Relays
+## Finding relays
 
-Require authentication or invitation.
-
-- **Pros:** Controlled access, privacy
-- **Cons:** Limited reach
-
-### Specialized Relays
-
-Focus on specific content types or communities.
-
-- Long-form content relays
-- Media-focused relays
-- Community relays
-
-## Relay Discovery
-
-### NIP-65: Relay List Metadata
-
-Users publish their preferred relays:
-
-```json
-{
-  "kind": 10002,
-  "tags": [
-    ["r", "wss://relay.damus.io", "read"],
-    ["r", "wss://nos.lol", "write"],
-    ["r", "wss://relay.nostr.band"]
-  ]
-}
-```
-
-### NIP-11: Relay Information
-
-Relays serve metadata at their root URL:
+**NIP-65 relay lists.** Each user publishes a kind 10002 event with `r` tags. A `read` or `write` marker limits a tag to one direction; no marker means both. Indexer relays collect these lists:
 
 ```bash
-curl -H "Accept: application/nostr+json" https://relay.example.com/
+nak req -k 10002 \
+  -a 3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d \
+  wss://purplepag.es
 ```
 
-### Popular Relay Lists
+The output has tags like `["r","wss://pyramid.fiatjaf.com/","write"]` and `["r","wss://inbox.relays.land/","read"]`. Clients that follow the "outbox model" read a person's notes from their write relays and send mentions to their read relays.
 
-- [nostr.watch](https://nostr.watch) - Relay monitoring
-- [Relay Registry](https://nostr.info/relays/) - Directory
+**NIP-11 relay information.** An HTTP `GET` with `Accept: application/nostr+json` on the relay URL returns its name, software, supported NIPs and limits:
 
-## Default Relays
-
-Common starting relays:
-
-```javascript
-const DEFAULT_RELAYS = [
-  'wss://relay.damus.io',
-  'wss://nos.lol',
-  'wss://relay.nostr.band',
-  'wss://relay.snort.social',
-  'wss://nostr.wine',
-  'wss://relay.primal.net',
-  'wss://purplepag.es'
-];
+```bash
+curl -H 'Accept: application/nostr+json' https://relay.primal.net
 ```
 
-## Relay Responsibilities
+Field reference: [Relay Information](../reference/relay-info.md).
 
-### What Relays Must Do
+**NIP-66 monitors.** Monitors probe relays and publish the results as kind 30166 events. You can query them with `nak` to find relays that are up and support a given NIP. See [Relay Explorers](./explorers.md).
 
-- Accept WebSocket connections
-- Validate event signatures
-- Respond to REQ with matching events
-- Send EOSE after stored events
-- Return OK after EVENT
+## Relays to start with
 
-### What Relays May Do
+Checked Oct 2026: `wss://relay.primal.net`, `wss://nos.lol`, `wss://relay.nostr.net` for general use, and `wss://purplepag.es` for profiles and relay lists. For local development, run `nak serve` (an in-memory relay at `ws://localhost:10547`). Don't hard-code a long list in your app: read the user's kind 10002 and fall back to a few defaults.
 
-- Store events permanently or temporarily
-- Implement rate limiting
-- Require authentication (NIP-42)
-- Require payment
-- Filter certain event kinds
-- Implement search (NIP-50)
+## In this section
 
-### What Relays Should Not Do
-
-- Modify event content
-- Forge signatures
-- Selectively censor without transparency
-
-## Getting Started
-
-Choose your path:
-
-1. **[Use Relays](./implementations)** - Connect to existing relays
-2. **[Run a Relay](./running-a-relay)** - Set up your own
-3. **[Configure a Relay](./configuration)** - Customize behavior
-
-## See Also
-
-- [Relay Implementations](./implementations)
-- [Running a Relay](./running-a-relay)
-- [Relay Communication Protocol](../protocol/relay-communication)
+1. [Relay Implementations](./implementations.md): which software to run, with maintenance status.
+2. [Running a Relay](./running-a-relay.md): install and run strfry, nostr-rs-relay, nostream or your own khatru relay.
+3. [Configuration](./configuration.md): the real config keys for strfry, nostr-rs-relay and nostream.
+4. [Reverse Proxy](./reverse-proxy.md): TLS with nginx, Caddy or HAProxy.
+5. [Hosting](./hosting.md): what kind of server you need.
+6. [Relay Explorers](./explorers.md): check relays and query NIP-66 monitors.
+7. [Sync Tools](./sync-tools.md): copy events between relays with negentropy.

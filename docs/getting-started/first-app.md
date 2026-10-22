@@ -1,402 +1,213 @@
 ---
 sidebar_position: 4
 title: Build Your First App
-description: Step-by-step tutorial to create a simple Nostr client
+description: A tested tutorial for a small web client that logs in with a signer, shows a live feed and posts notes
 ---
 
 # Build Your First App
 
-Let's build a simple Nostr client that can read and post notes. By the end, you'll understand the core concepts through hands-on code.
+This tutorial builds a small web client in plain JavaScript. It logs in with a browser signer (or a throwaway key), shows a live feed of notes, and posts new ones. It is about 100 lines, and it was run end to end in a headless browser in October 2026 with nostr-tools 2.25.2, Vite 8 and nak 0.21.2.
 
-## What We'll Build
+You'll develop against a relay on your own machine, so test posts don't go out to the public network. Step 6 switches to public relays.
 
-A minimal web app that:
-- Generates or imports a keypair
-- Connects to relays
-- Fetches recent notes
-- Posts new notes
+## What you need
 
-## Prerequisites
+- **Node.js 22.12 or later.** Vite 8 needs at least 20.19, and Node 20 is end-of-life. (Tested on Node 24.)
+- **[nak](https://github.com/fiatjaf/nak)**, for the local relay. Install it with `curl -sSL https://raw.githubusercontent.com/fiatjaf/nak/master/install.sh | sh` or `go install github.com/fiatjaf/nak@latest`. The wiki's [nak page](https://github.com/nostrcg/devguide/wiki/NAK) lists other ways.
+- **Optional: a NIP-07 signer extension** such as Alby, nos2x or nos2x-fox. Without one, use the throwaway-key button.
 
-- Node.js 18+ installed
-- Basic JavaScript/TypeScript knowledge
-- A code editor
-
-## Step 1: Project Setup
-
-Create a new project:
+## 1. Create the project
 
 ```bash
 mkdir my-nostr-app
 cd my-nostr-app
 npm init -y
-npm install nostr-tools
+npm i nostr-tools
+npm i -D vite
 ```
 
-Create an `index.html`:
+## 2. Start a local relay
+
+In a second terminal:
+
+```bash
+nak serve
+# > relay running at ws://localhost:10547
+```
+
+This is an in-memory relay for development. It forgets everything when you stop it.
+
+## 3. The page
+
+Create `index.html`:
 
 ```html
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <title>My First Nostr App</title>
+  <meta charset="utf-8">
+  <title>My first Nostr app</title>
   <style>
-    body { font-family: system-ui; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
-    .note { border: 1px solid #ddd; padding: 1rem; margin: 1rem 0; border-radius: 8px; }
-    .note-author { color: #666; font-size: 0.875rem; }
-    .note-content { margin-top: 0.5rem; }
-    textarea { width: 100%; padding: 0.5rem; }
-    button { margin-top: 0.5rem; padding: 0.5rem 1rem; cursor: pointer; }
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    .note { border: 1px solid #ccc; border-radius: 8px; padding: .75rem; margin: .75rem 0; white-space: pre-wrap; }
+    .meta { color: #666; font-size: .85rem; }
+    textarea { width: 100%; }
   </style>
 </head>
 <body>
-  <h1>My Nostr App</h1>
+  <h1>My first Nostr app</h1>
 
-  <div id="key-section">
-    <p>Your public key: <code id="pubkey">Loading...</code></p>
-    <button id="new-key">Generate New Key</button>
-  </div>
+  <p id="who">Not logged in.</p>
+  <button id="login-ext">Log in with extension</button>
+  <button id="login-temp">Use a throwaway key</button>
 
-  <hr>
+  <form id="post" hidden>
+    <textarea id="text" rows="3" placeholder="Write a note"></textarea>
+    <button>Post</button> <span id="status"></span>
+  </form>
 
-  <div id="post-section">
-    <h2>Post a Note</h2>
-    <textarea id="note-input" rows="3" placeholder="What's on your mind?"></textarea>
-    <button id="post-btn">Post</button>
-  </div>
+  <h2>Notes</h2>
+  <div id="feed"></div>
 
-  <hr>
-
-  <div id="feed-section">
-    <h2>Recent Notes</h2>
-    <div id="notes"></div>
-  </div>
-
-  <script type="module" src="app.js"></script>
+  <script type="module" src="/main.js"></script>
 </body>
 </html>
 ```
 
-## Step 2: Connect to Relays
+## 4. The code
 
-Create `app.js`:
+Create `main.js`:
 
-```javascript
-import {
-  SimplePool,
-  generateSecretKey,
-  getPublicKey,
-  finalizeEvent
-} from 'nostr-tools';
-import { nip19 } from 'nostr-tools';
+```js
+import { SimplePool } from 'nostr-tools/pool'
+import { generateSecretKey, getPublicKey, finalizeEvent } from 'nostr-tools/pure'
+import * as nip19 from 'nostr-tools/nip19'
 
-// Relay list
-const RELAYS = [
-  'wss://relay.damus.io',
-  'wss://nos.lol',
-  'wss://relay.nostr.band'
-];
+// Start with the local nak relay. Step 6 switches to public relays.
+const RELAYS = ['ws://localhost:10547']
 
-// Initialize pool for managing relay connections
-const pool = new SimplePool();
+const pool = new SimplePool()
+const $ = (id) => document.getElementById(id)
 
-// Key management
-let sk = null;
-let pk = null;
+// ---- 1. a signer: anything with getPublicKey() and signEvent()
+let signer = null
 
-function initKeys() {
-  // Check localStorage for existing key
-  const stored = localStorage.getItem('nostr_sk');
-  if (stored) {
-    sk = Uint8Array.from(JSON.parse(stored));
+$('login-ext').onclick = async () => {
+  if (!window.nostr) return alert('No NIP-07 extension found')
+  signer = window.nostr
+  showUser(await signer.getPublicKey())
+}
+
+$('login-temp').onclick = () => {
+  // kept in memory only: reload the page and it is gone
+  const sk = generateSecretKey()
+  signer = {
+    getPublicKey: async () => getPublicKey(sk),
+    signEvent: async (template) => finalizeEvent(template, sk),
+  }
+  signer.getPublicKey().then(showUser)
+}
+
+function showUser(pubkey) {
+  $('who').textContent = 'Logged in as ' + nip19.npubEncode(pubkey)
+  $('post').hidden = false
+}
+
+// ---- 2. the feed: one live subscription, deduped by id, newest first
+const notes = new Map()
+
+pool.subscribeMany(RELAYS, { kinds: [1], limit: 20 }, {
+  onevent(event) {
+    // SimplePool has already checked the id and signature
+    notes.set(event.id, event)
+    render()
+  },
+})
+
+function render() {
+  const sorted = [...notes.values()].sort((a, b) => b.created_at - a.created_at).slice(0, 50)
+  $('feed').replaceChildren(...sorted.map(noteElement))
+}
+
+function noteElement(event) {
+  const div = document.createElement('div')
+  div.className = 'note'
+  const meta = document.createElement('div')
+  meta.className = 'meta'
+  const when = new Date(event.created_at * 1000).toLocaleString()
+  meta.textContent = nip19.npubEncode(event.pubkey).slice(0, 16) + '… · ' + when
+  const body = document.createElement('div')
+  // textContent, never innerHTML: note content is untrusted input
+  body.textContent = event.content
+  div.append(meta, body)
+  return div
+}
+
+// ---- 3. posting: sign, publish, and wait for at least one relay to accept
+$('post').onsubmit = async (e) => {
+  e.preventDefault()
+  const content = $('text').value.trim()
+  if (!content) return
+
+  const event = await signer.signEvent({
+    kind: 1,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [],
+    content,
+  })
+
+  $('status').textContent = 'Publishing…'
+  // publish() returns one promise per relay
+  const results = await Promise.allSettled(pool.publish(RELAYS, event))
+  const ok = results.filter((r) => r.status === 'fulfilled').length
+  if (ok > 0) {
+    $('status').textContent = `Accepted by ${ok} of ${RELAYS.length} relays`
+    $('text').value = ''
   } else {
-    sk = generateSecretKey();
-    localStorage.setItem('nostr_sk', JSON.stringify(Array.from(sk)));
-  }
-  pk = getPublicKey(sk);
-
-  // Display npub
-  const npub = nip19.npubEncode(pk);
-  document.getElementById('pubkey').textContent = npub.slice(0, 20) + '...';
-}
-
-// Generate new key button
-document.getElementById('new-key').addEventListener('click', () => {
-  if (confirm('Generate new key? You will lose access to the old one.')) {
-    sk = generateSecretKey();
-    localStorage.setItem('nostr_sk', JSON.stringify(Array.from(sk)));
-    pk = getPublicKey(sk);
-    const npub = nip19.npubEncode(pk);
-    document.getElementById('pubkey').textContent = npub.slice(0, 20) + '...';
-  }
-});
-
-// Initialize on load
-initKeys();
-```
-
-## Step 3: Fetch Notes
-
-Add the subscription logic:
-
-```javascript
-async function fetchNotes() {
-  const notesDiv = document.getElementById('notes');
-  notesDiv.innerHTML = '<p>Loading...</p>';
-
-  try {
-    // Subscribe to kind 1 (text notes) from the last hour
-    const events = await pool.querySync(RELAYS, {
-      kinds: [1],
-      limit: 20,
-      since: Math.floor(Date.now() / 1000) - 3600 // Last hour
-    });
-
-    // Sort by created_at (newest first)
-    events.sort((a, b) => b.created_at - a.created_at);
-
-    // Render notes
-    notesDiv.innerHTML = '';
-    for (const event of events) {
-      const noteDiv = document.createElement('div');
-      noteDiv.className = 'note';
-
-      const npub = nip19.npubEncode(event.pubkey);
-      const date = new Date(event.created_at * 1000).toLocaleString();
-
-      noteDiv.innerHTML = `
-        <div class="note-author">${npub.slice(0, 16)}... · ${date}</div>
-        <div class="note-content">${escapeHtml(event.content)}</div>
-      `;
-      notesDiv.appendChild(noteDiv);
-    }
-
-    if (events.length === 0) {
-      notesDiv.innerHTML = '<p>No notes found in the last hour.</p>';
-    }
-  } catch (err) {
-    notesDiv.innerHTML = `<p>Error: ${err.message}</p>`;
+    $('status').textContent = 'Rejected: ' + results.map((r) => r.reason?.message).join('; ')
   }
 }
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-// Fetch notes on load
-fetchNotes();
 ```
 
-## Step 4: Post Notes
+What each part does:
 
-Add posting functionality:
+1. **The signer.** The rest of the app only needs an object with `getPublicKey()` and `signEvent()`. A NIP-07 extension provides exactly that as `window.nostr`, and it never shows your app the secret key. The throwaway option wraps a key that lives only in memory, so nothing secret is stored in the browser. A [NIP-46 remote signer](https://github.com/nostrcg/devguide/wiki/Extensions) has the same two methods, so you could add it without touching the rest.
+2. **The feed.** `subscribeMany` takes a list of relays and **one** filter. It returns the 20 newest stored notes, then keeps streaming new ones. The same note often arrives from several relays, so the `Map` keyed by id removes duplicates. Events arrive in any order, so `render()` sorts by `created_at`.
+3. **Rendering.** Note content is written by strangers. `textContent` puts it on the page as plain text, so a note containing `<img src=x onerror=…>` shows up as text and doesn't run. (The test for this page posted exactly that.) Never build note HTML with `innerHTML` and string templates.
+4. **Posting.** `pool.publish()` returns **an array of promises**, one per relay. `await` on the array itself waits for nothing, so the code passes it to `Promise.allSettled` and counts how many relays accepted. `Promise.any(pool.publish(…))` is the short form if you only need one success.
 
-```javascript
-document.getElementById('post-btn').addEventListener('click', async () => {
-  const input = document.getElementById('note-input');
-  const content = input.value.trim();
-
-  if (!content) {
-    alert('Please enter some text');
-    return;
-  }
-
-  const btn = document.getElementById('post-btn');
-  btn.disabled = true;
-  btn.textContent = 'Posting...';
-
-  try {
-    // Create and sign the event
-    const event = finalizeEvent({
-      kind: 1,
-      content: content,
-      tags: [],
-      created_at: Math.floor(Date.now() / 1000)
-    }, sk);
-
-    // Publish to all relays
-    await Promise.all(
-      RELAYS.map(relay => pool.publish([relay], event))
-    );
-
-    // Clear input and refresh
-    input.value = '';
-    alert('Posted successfully!');
-    fetchNotes();
-  } catch (err) {
-    alert(`Error posting: ${err.message}`);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Post';
-  }
-});
-```
-
-## Step 5: Run the App
-
-You'll need a bundler to handle the imports. Use Vite for simplicity:
+## 5. Run it
 
 ```bash
-npm install vite
 npx vite
 ```
 
-Open `http://localhost:5173` in your browser.
+Open the URL it prints (usually `http://localhost:5173`). Click **Use a throwaway key** (or **Log in with extension**), write a note and press **Post**. The status should read "Accepted by 1 of 1 relays", and the note appears at the top of the feed, because the live subscription receives it from the relay.
 
-## Complete Code
+`npx vite build` writes a static site to `dist/` that you can host anywhere.
 
-Here's the full `app.js`:
+## 6. Read the public network
 
-```javascript
-import {
-  SimplePool,
-  generateSecretKey,
-  getPublicKey,
-  finalizeEvent
-} from 'nostr-tools';
-import { nip19 } from 'nostr-tools';
+Change the relay list to some public relays:
 
-const RELAYS = [
-  'wss://relay.damus.io',
-  'wss://nos.lol',
-  'wss://relay.nostr.band'
-];
-
-const pool = new SimplePool();
-let sk = null;
-let pk = null;
-
-function initKeys() {
-  const stored = localStorage.getItem('nostr_sk');
-  if (stored) {
-    sk = Uint8Array.from(JSON.parse(stored));
-  } else {
-    sk = generateSecretKey();
-    localStorage.setItem('nostr_sk', JSON.stringify(Array.from(sk)));
-  }
-  pk = getPublicKey(sk);
-  const npub = nip19.npubEncode(pk);
-  document.getElementById('pubkey').textContent = npub.slice(0, 20) + '...';
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-async function fetchNotes() {
-  const notesDiv = document.getElementById('notes');
-  notesDiv.innerHTML = '<p>Loading...</p>';
-
-  try {
-    const events = await pool.querySync(RELAYS, {
-      kinds: [1],
-      limit: 20,
-      since: Math.floor(Date.now() / 1000) - 3600
-    });
-
-    events.sort((a, b) => b.created_at - a.created_at);
-    notesDiv.innerHTML = '';
-
-    for (const event of events) {
-      const noteDiv = document.createElement('div');
-      noteDiv.className = 'note';
-      const npub = nip19.npubEncode(event.pubkey);
-      const date = new Date(event.created_at * 1000).toLocaleString();
-      noteDiv.innerHTML = `
-        <div class="note-author">${npub.slice(0, 16)}... · ${date}</div>
-        <div class="note-content">${escapeHtml(event.content)}</div>
-      `;
-      notesDiv.appendChild(noteDiv);
-    }
-
-    if (events.length === 0) {
-      notesDiv.innerHTML = '<p>No notes found in the last hour.</p>';
-    }
-  } catch (err) {
-    notesDiv.innerHTML = `<p>Error: ${err.message}</p>`;
-  }
-}
-
-document.getElementById('new-key').addEventListener('click', () => {
-  if (confirm('Generate new key? You will lose access to the old one.')) {
-    sk = generateSecretKey();
-    localStorage.setItem('nostr_sk', JSON.stringify(Array.from(sk)));
-    pk = getPublicKey(sk);
-    const npub = nip19.npubEncode(pk);
-    document.getElementById('pubkey').textContent = npub.slice(0, 20) + '...';
-  }
-});
-
-document.getElementById('post-btn').addEventListener('click', async () => {
-  const input = document.getElementById('note-input');
-  const content = input.value.trim();
-
-  if (!content) {
-    alert('Please enter some text');
-    return;
-  }
-
-  const btn = document.getElementById('post-btn');
-  btn.disabled = true;
-  btn.textContent = 'Posting...';
-
-  try {
-    const event = finalizeEvent({
-      kind: 1,
-      content: content,
-      tags: [],
-      created_at: Math.floor(Date.now() / 1000)
-    }, sk);
-
-    await Promise.all(RELAYS.map(relay => pool.publish([relay], event)));
-    input.value = '';
-    alert('Posted successfully!');
-    fetchNotes();
-  } catch (err) {
-    alert(`Error posting: ${err.message}`);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Post';
-  }
-});
-
-initKeys();
-fetchNotes();
+```js
+const RELAYS = ['wss://relay.primal.net', 'wss://relay.nostr.net', 'wss://nos.lol']
 ```
 
-## What's Next?
+Reload, and the feed fills with recent notes from strangers. This is a "global" feed: whatever those relays received last. Posting now publishes to the real network, under whatever key you logged in with. Throwaway keys are fine for a test or two, but don't flood public relays with them.
 
-You've built a working Nostr client! Here are ways to extend it:
-
-### Add Features
-- Display user profiles (kind 0)
-- Show reactions (kind 7)
-- Implement replies (using tags)
-- Add image support
-
-### Improve Security
-- Integrate NIP-07 for key management
-- Don't store keys in localStorage in production
-
-### Learn More
-- [Protocol Deep Dive](../protocol/overview)
-- [Event Kinds](../protocol/kinds)
-- [Building Clients Guide](../guides/building-clients)
+:::tip Where a real client goes next
+Real clients don't write every user's notes to the same three relays. They read each user's **relay list** (kind 10002) and post to that user's write relays: the outbox model. They also show names and avatars from kind 0 profiles, build a home feed from the kind 3 follow list, and handle replies and reactions. The wiki's [Build a client](https://github.com/nostrcg/devguide/wiki/Build-a-Client) walks through all of that with tested code, and [Building clients](../guides/building-clients.md) covers it here.
+:::
 
 ## Troubleshooting
 
-**Notes not loading?**
-- Check browser console for WebSocket errors
-- Some relays may be down—try different ones
+- **The feed is empty.** Check that `nak serve` is still running, and look in the browser console for WebSocket errors. A relay that is down or unreachable just returns nothing.
+- **"Rejected: …"** The text after it is the relay's reason. It starts with a machine-readable prefix such as `rate-limited:`, `blocked:` or `auth-required:`. [Relay communication](../protocol/relay-communication.md) explains each one.
+- **"No NIP-07 extension found".** The extension isn't installed or isn't enabled for `localhost`. Use the throwaway key, or check the extension's site permissions.
 
-**Post not appearing?**
-- Relays may have rate limits
-- Verify the event format in console
+## Learn more
 
-**Key issues?**
-- Clear localStorage and regenerate
-- Check browser's developer tools for errors
+- [Keys and signing](./keys-and-signing.md): key formats, signers and NIP-49 encrypted keys.
+- [Filters](../protocol/filters.md): asking relays for exactly what you need.
+- [Event kinds](../protocol/kinds.md): profiles, reactions, reposts and the rest.

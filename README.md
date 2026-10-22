@@ -1,41 +1,47 @@
-# Website
+# Nostr Developer Guide
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+Source for <https://nostrcg.github.io/devguide/>, the developer guide of the
+[W3C Nostr Community Group](https://www.w3.org/community/nostr/). It is a Community Group work, not a W3C Standard.
+The site is built with [Docusaurus](https://docusaurus.io/). Practical recipes also live in the
+[wiki](https://github.com/nostrcg/devguide/wiki).
 
-## Installation
+## Branches
+
+The site **source** lives on the `gh-pages` branch (this branch). There is no separate build branch: GitHub Actions builds
+the site and publishes it to GitHub Pages.
+
+## Local development
+
+The repository has a `package-lock.json`, so use npm:
 
 ```bash
-yarn
+npm ci
+npm start
 ```
 
-## Local Development
-
-```bash
-yarn start
-```
-
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+`npm start` runs a dev server with live reload at <http://localhost:3000/devguide/>.
 
 ## Build
 
 ```bash
-yarn build
+npm run build
+npm run serve   # preview the build locally
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
+The build fails on broken internal links, anchors and Markdown links. Fix them before you push.
 
 ## Deployment
 
-Using SSH:
+Push to `gh-pages`. The workflow in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs `npm ci` and
+`npm run build`, then deploys `build/` to GitHub Pages.
 
-```bash
-USE_SSH=true yarn deploy
-```
+> [!CAUTION]
+> **Don't run `npx docusaurus deploy`.** It pushes the built HTML to the `gh-pages` branch, which here holds the source,
+> so it would replace the source tree with build output. (The `deploy` npm script was removed for this reason.)
 
-Not using SSH:
+## Contributing
 
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+- Every code sample should be run against current libraries before it is merged, or copied from a current upstream README.
+- Check NIP details against [nostr-protocol/nips](https://github.com/nostr-protocol/nips).
+- `docs/reference/event-kinds.md` and `docs/reference/nip-index.md` are generated from the NIPs README. Regenerate them
+  rather than editing them by hand: `python3 -I scripts/gen-reference.py <path-to-nips-clone> .`

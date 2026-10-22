@@ -1,452 +1,259 @@
 ---
 sidebar_position: 5
 title: Command Snippets
-description: Useful command-line snippets for Nostr development
+description: Tested command-line recipes for Nostr with nak, websocat, curl and jq
 ---
 
 # Command Snippets
 
-Quick reference for common Nostr operations using command-line tools.
+Copy-paste shell recipes for common Nostr jobs. Each one was run in October 2026 with
+[nak](https://github.com/fiatjaf/nak) v0.21.2, websocat, `curl` and `jq`.
 
-## Tools Setup
+For every nak subcommand and flag, see the wiki's [nak cheat-sheet](https://github.com/nostrcg/devguide/wiki/NAK).
+For more pipelines, see the wiki's [Snippets](https://github.com/nostrcg/devguide/wiki/Snippets) and
+[websocat](https://github.com/nostrcg/devguide/wiki/Websocat) pages.
 
-### Install nak (Nostr Army Knife)
+## Setup
 
 ```bash
+# nak: install script from the README (Linux / macOS)
+curl -sSL https://raw.githubusercontent.com/fiatjaf/nak/master/install.sh | sh
+# or
 go install github.com/fiatjaf/nak@latest
 ```
 
-### Install websocat
+websocat: `brew install websocat`, `cargo install websocat`, or a binary from its
+[releases](https://github.com/vi/websocat/releases). `jq` is in every package manager.
+
+Write recipes go to a local throwaway relay, so start one in another terminal:
 
 ```bash
-cargo install websocat
-# or via package manager
-brew install websocat  # macOS
-apt install websocat   # Debian/Ubuntu
+# ws://localhost:10547, in memory, gone when you stop it
+nak serve
 ```
 
-### Install jq
+Every nak command that signs reads `$NOSTR_SECRET_KEY`. Use a throwaway key for these recipes:
 
 ```bash
-brew install jq     # macOS
-apt install jq      # Debian/Ubuntu
+export NOSTR_SECRET_KEY=$(nak key generate)
 ```
 
-## Event Queries
+:::caution
+With no `$NOSTR_SECRET_KEY` and no `--sec`, nak signs with a per-machine default key (`nak key default` shows it).
+Don't pass a real key as `--sec <key>` on the command line, where it lands in shell history and `ps`. To use a real key,
+type it without echo: `read -rs NOSTR_SECRET_KEY && export NOSTR_SECRET_KEY`.
+:::
 
-### Fetch Recent Notes
+:::note
+`nak req` and `nak event` read from stdin whenever stdin isn't a terminal. In scripts, loops and CI, add `</dev/null`
+to each call, or nak waits for input forever.
+:::
+
+## Keys and encoding
 
 ```bash
-# Using nak
-nak req -k 1 -l 10 wss://relay.damus.io
+# hex public key of your secret key (read from stdin, not argv)
+echo "$NOSTR_SECRET_KEY" | nak key public
 
-# Using websocat
-echo '["REQ", "x", {"kinds": [1], "limit": 10}]' | \
-  websocat -n wss://relay.damus.io
+# hex → npub, npub → hex
+nak encode npub <hex-pubkey>
+nak decode npub1…
+
+# nevent and nprofile with a relay hint
+nak encode nevent --relay wss://relay.primal.net <event-id>
+nak encode nprofile --relay wss://relay.primal.net <hex-pubkey>
+
+# naddr for an addressable event
+nak encode naddr -k 30023 -d my-article -a <hex-pubkey>
 ```
 
-### Query by Author
+nak v0.21.2 has no `encode note`. Use `nevent`, which can also carry relay hints and the author. `nak decode` still reads `note1…` codes.
+
+## Query relays
+
+Filters take **hex** pubkeys and ids. Convert npubs with `nak decode` first.
 
 ```bash
-# Get profile (kind 0)
-nak req -k 0 -a <pubkey-hex> wss://relay.damus.io
+PK=32e1827635450ebb3c5a7d12c1f8e7b2b514439ac10a67eef3d9fd9c5c68e245
 
-# Get notes from author
-nak req -k 1 -a <pubkey-hex> -l 20 wss://relay.damus.io
+# an author's last 3 notes, with dates
+nak req -k 1 -a $PK -l 3 wss://relay.primal.net \
+  | jq -r '"\(.created_at | todate)  \(.content[0:60])"'
 
-# Using websocat
-echo '["REQ", "x", {"kinds": [1], "authors": ["<pubkey-hex>"], "limit": 20}]' | \
-  websocat -n wss://relay.damus.io
+# profile from an indexer relay (content is JSON inside JSON)
+nak req -k 0 -a $PK wss://purplepag.es \
+  | jq -r .content | jq '{name, nip05}'
+
+# how many accounts they follow
+nak req -k 3 -a $PK wss://purplepag.es \
+  | jq '[.tags[] | select(.[0]=="p")] | length'
+
+# their relay list (NIP-65), with read/write markers
+nak req -k 10002 -a $PK wss://purplepag.es \
+  | jq -r '.tags[] | select(.[0]=="r") | "\(.[1]) \(.[2] // "read+write")"'
+
+# notes with a hashtag
+nak req -k 1 -t t=nostr -l 5 wss://relay.primal.net | jq -r .content
+
+# notes from the last hour (GNU date; on macOS use: date -v-1H +%s)
+nak req -k 1 -s "$(date -d '1 hour ago' +%s)" -l 10 wss://relay.primal.net
 ```
 
-### Get Follow List
+Different relays may hold different versions of a replaceable event. `nak fetch` asks the author's relays and
+prints every version it finds. Keep the newest:
 
 ```bash
-# Kind 3 is follow list
-nak req -k 3 -a <pubkey-hex> -l 1 wss://relay.damus.io
-
-# Extract followed pubkeys
-nak req -k 3 -a <pubkey-hex> -l 1 wss://relay.damus.io | \
-  jq -r '.tags[] | select(.[0]=="p") | .[1]'
+nak fetch -k 0 npub1xtscya34g58tk0z605fvr788k263gsu6cy9x0mhnm87echrgufzsevkk5s \
+  | jq -s 'max_by(.created_at) | .content | fromjson | .name'
 ```
 
-### Get Relay List (NIP-65)
+### Full-text search (NIP-50)
+
+Only relays that list `50` in `supported_nips` support search. `wss://search.nos.today` did in October 2026:
 
 ```bash
-nak req -k 10002 -a <pubkey-hex> -l 1 wss://relay.damus.io
-
-# Extract relay URLs
-nak req -k 10002 -a <pubkey-hex> wss://relay.damus.io | \
-  jq -r '.tags[] | select(.[0]=="r") | .[1]'
+nak req -k 1 --search bitcoin -l 5 wss://search.nos.today | jq -r .content
 ```
 
-### Search Notes
+### Count (NIP-45)
 
 ```bash
-# If relay supports NIP-50 search
-echo '["REQ", "x", {"kinds": [1], "search": "nostr", "limit": 20}]' | \
-  websocat -n wss://relay.nostr.band
+# follow lists that include $PK, as counted by one relay
+nak count -k 3 -p $PK wss://relay.primal.net
 ```
 
-### Time-Bounded Query
+The answer is one relay's count, not a network total.
+
+## Threads, reactions and reposts
+
+`-i` matches an event id. `-e` matches an `#e` tag, which is how replies, reactions and reposts point at their target.
 
 ```bash
-# Events from last 24 hours
-SINCE=$(($(date +%s) - 86400))
-nak req -k 1 --since $SINCE -l 50 wss://relay.damus.io
+ID=<hex-event-id>
+R=wss://relay.primal.net
 
-# Events in date range
-echo '["REQ", "x", {"kinds": [1], "since": 1700000000, "until": 1700100000}]' | \
-  websocat -n wss://relay.damus.io
+# the event itself
+nak req -i $ID $R | jq -r .content
+
+# replies
+nak req -k 1 -e $ID $R | jq -r .content
+
+# reactions, grouped
+nak req -k 7 -e $ID $R | jq -r .content | sort | uniq -c | sort -rn
+
+# who reposted it
+nak req -k 6 -e $ID $R | jq -r .pubkey
 ```
 
-## Event Publishing
-
-### Publish a Note
+## Publish (to the local relay)
 
 ```bash
-# Interactive (will prompt for key)
-nak event -c "Hello Nostr!" wss://relay.damus.io
+R=ws://localhost:10547
 
-# With private key
-nak event -c "Hello Nostr!" --sec <privkey-hex> wss://relay.damus.io
+# a note
+nak event -c 'hello' $R
 
-# With reply
-nak event -c "Great post!" \
-  -e <event-id> \
-  --sec <privkey-hex> \
-  wss://relay.damus.io
+# a reply: root e-tag with a marker, and a p-tag for the author
+nak event -c 'a reply' -t e="<root-id>;;root" -p <root-author-hex> $R
+
+# a reaction
+nak event -k 7 -c '+' -e <event-id> -p <author-hex> $R
+
+# a long-form article (addressable: kind 30023 + d tag)
+nak event -k 30023 -d my-article -t title='Hello' -c '# Title' $R
+
+# ask relays to delete one of your events (NIP-09)
+nak event -k 5 -e <your-event-id> $R
 ```
 
-### Publish Profile
+With no relay URL, `nak event` only prints the signed event.
+
+:::danger
+Kinds `0` (profile), `3` (follow list) and `10002` (relay list) are **replaceable**. Publishing one with your real key replaces
+the old one, so a snippet that publishes a fresh follow list wipes your real follows. Always fetch the current event,
+edit it, and publish the edited version. The wiki's [Snippets](https://github.com/nostrcg/devguide/wiki/Snippets) page shows
+the safe relay-list flow.
+:::
+
+## Verify
 
 ```bash
-nak event -k 0 \
-  -c '{"name":"alice","about":"Developer"}' \
-  --sec <privkey-hex> \
-  wss://relay.damus.io
+# exit 0 if id and signature are valid
+nak event -c test | nak verify && echo ok
+
+# a tampered event fails
+nak event -c test | jq -c '.content="tampered"' | nak verify
 ```
 
-### Publish Follow List
+## Back up, restore and sync
 
 ```bash
-nak event -k 3 \
-  -p <pubkey1> \
-  -p <pubkey2> \
-  -p <pubkey3> \
-  --sec <privkey-hex> \
-  wss://relay.damus.io
+# export everything one author has on a relay
+nak req -a <hex-pubkey> wss://relay.primal.net > backup.jsonl
+
+# re-publish it, as-is, to another relay (signatures are kept)
+while read -r ev; do
+  echo "$ev" | nak event ws://localhost:10547
+done < backup.jsonl
 ```
 
-### Delete Event
+Relays clamp results to their `max_limit` (see [Relay Information](relay-info.md)), so a big export needs several
+requests paged with `-u <until-timestamp>`.
+
+To copy only what's missing, use negentropy sync ([NIP-77](https://github.com/nostr-protocol/nips/blob/master/77.md)).
+Both relays must support it; for local tests start them with `nak serve --negentropy`:
 
 ```bash
-# Kind 5 deletion
-nak event -k 5 \
-  -e <event-id-to-delete> \
-  --sec <privkey-hex> \
-  wss://relay.damus.io
+# two-way: each side gets what the other has; -k, -a and -s narrow it
+timeout 60 nak sync ws://localhost:10547 ws://localhost:10548
 ```
 
-## Key Operations
+If either side lacks NIP-77, `sync` hangs without an error, hence the `timeout`.
 
-### Generate Keys
+## Relays over raw WebSocket
+
+websocat shows exactly what a relay sends. `-n` keeps the socket open after stdin ends, so pair it with `timeout`:
 
 ```bash
-# Generate new keypair
-nak key generate
+echo '["REQ","x",{"kinds":[1],"limit":3}]' \
+  | timeout 5 websocat -n wss://relay.primal.net \
+  | jq -r 'select(.[0]=="EVENT") | .[2].content'
 
-# Output format
-# Private key (hex): <64-char-hex>
-# Public key (hex): <64-char-hex>
-# nsec: <nsec1...>
-# npub: <npub1...>
+# REQ then CLOSE
+printf '%s\n' '["REQ","s",{"kinds":[1],"limit":1}]' '["CLOSE","s"]' \
+  | timeout 5 websocat -n wss://relay.primal.net
 ```
 
-### Convert Between Formats
+## Sample the firehose
 
 ```bash
-# npub to hex
-nak decode npub1...
+# 30 seconds of new notes (-l 0 skips stored ones)
+timeout 30 nak req -k 1 -l 0 --stream wss://relay.primal.net > sample.jsonl
+wc -l < sample.jsonl
 
-# hex to npub
-nak encode npub <hex>
-
-# nsec to hex
-nak decode nsec1...
-
-# hex to nsec
-nak encode nsec <hex>
+# busiest authors in the sample
+jq -r .pubkey sample.jsonl | sort | uniq -c | sort -rn | head
 ```
 
-### Encode Note ID
+## Relay info and NIP-05
 
 ```bash
-# Event ID to note format
-nak encode note <event-id-hex>
-
-# Decode note to hex
-nak decode note1...
-```
-
-### Create NIP-19 Entities
-
-```bash
-# Create nprofile (pubkey + relays)
-nak encode nprofile \
-  --pubkey <hex> \
-  --relay wss://relay.damus.io \
-  --relay wss://nos.lol
-
-# Create nevent (event + relays)
-nak encode nevent \
-  --id <event-id> \
-  --relay wss://relay.damus.io \
-  --author <pubkey>
-
-# Create naddr (replaceable event address)
-nak encode naddr \
-  --pubkey <hex> \
-  --kind 30023 \
-  --identifier "my-article" \
-  --relay wss://relay.damus.io
-```
-
-## Relay Operations
-
-### Check Relay Info (NIP-11)
-
-```bash
-# Get relay information document
-curl -s -H "Accept: application/nostr+json" https://relay.damus.io/ | jq
-
-# Check supported NIPs
-curl -s -H "Accept: application/nostr+json" https://relay.damus.io/ | \
-  jq '.supported_nips'
-
-# Get relay name
-curl -s -H "Accept: application/nostr+json" https://relay.damus.io/ | \
-  jq -r '.name'
-```
-
-### Test Relay Connection
-
-```bash
-# Quick connectivity test
-websocat -v wss://relay.damus.io/ 2>&1 | head -5
-
-# Send ping and wait for response
-echo '["REQ", "test", {"limit": 1}]' | \
-  timeout 5 websocat -n wss://relay.damus.io | head -1
-```
-
-### Count Events (NIP-45)
-
-```bash
-# If relay supports COUNT
-echo '["COUNT", "x", {"kinds": [1]}]' | \
-  websocat -n wss://relay.nostr.band
-```
-
-### Monitor Live Events
-
-```bash
-# Stream all kind 1 events (firehose)
-echo '["REQ", "stream", {"kinds": [1], "limit": 0}]' | \
-  websocat -n --ping-interval 30 wss://relay.damus.io
-
-# Filter by hashtag
-echo '["REQ", "stream", {"kinds": [1], "#t": ["nostr"], "limit": 0}]' | \
-  websocat -n --ping-interval 30 wss://relay.damus.io
-```
-
-## Data Processing
-
-### Parse Event JSON
-
-```bash
-# Extract content from events
-nak req -k 1 -l 5 wss://relay.damus.io | jq -r '.content'
-
-# Get event IDs
-nak req -k 1 -l 5 wss://relay.damus.io | jq -r '.id'
-
-# Get created_at as date
-nak req -k 1 -l 5 wss://relay.damus.io | \
-  jq -r '.created_at | todate'
-```
-
-### Filter Events
-
-```bash
-# Events with images
-nak req -k 1 -l 100 wss://relay.damus.io | \
-  jq 'select(.content | test("\\.(jpg|png|gif)"))'
-
-# Events mentioning a pubkey
-nak req -k 1 -l 100 wss://relay.damus.io | \
-  jq 'select(.tags[][] == "<pubkey>")'
-```
-
-### Count by Kind
-
-```bash
-nak req -l 1000 wss://relay.damus.io | \
-  jq -s 'group_by(.kind) | map({kind: .[0].kind, count: length})'
-```
-
-### Extract Tags
-
-```bash
-# Get all hashtags
-nak req -k 1 -l 100 wss://relay.damus.io | \
-  jq -r '.tags[] | select(.[0]=="t") | .[1]' | \
-  sort | uniq -c | sort -rn
-
-# Get all mentioned pubkeys
-nak req -k 1 -l 100 wss://relay.damus.io | \
-  jq -r '.tags[] | select(.[0]=="p") | .[1]' | \
-  sort | uniq -c | sort -rn
-```
-
-## Sync Operations
-
-### Export Events
-
-```bash
-# Export user's events to file
-nak req -a <pubkey> wss://relay.damus.io > events.jsonl
-
-# Export with specific kinds
-nak req -k 0 -k 1 -k 3 -a <pubkey> wss://relay.damus.io > profile.jsonl
-```
-
-### Import Events
-
-```bash
-# Publish events from file
-cat events.jsonl | while read event; do
-  echo "[\"EVENT\", $event]" | websocat -n wss://destination-relay.com
-  sleep 0.1
+# compare several relays' NIP-11 documents
+for r in relay.primal.net relay.nostr.net purplepag.es; do
+  curl -s -m 10 -H 'Accept: application/nostr+json' "https://$r" \
+    | jq -c '{name, software, supported_nips}'
 done
+
+# NIP-05: name@domain → pubkey
+curl -s 'https://damus.io/.well-known/nostr.json?name=jb55' | jq -r '.names.jb55'
+
+# the same, plus relay hints
+nak decode jb55@damus.io
 ```
 
-### Sync Relays
+The NIP-11 fields are explained in [Relay Information](relay-info.md).
 
-```bash
-# Using nak sync (if available)
-nak sync wss://source.com wss://dest.com \
-  --filter '{"authors": ["<pubkey>"]}'
-
-# Using strfry
-strfry sync wss://relay.damus.io --filter '{"kinds": [1]}'
-```
-
-## Advanced Queries
-
-### Get Thread
-
-```bash
-# Get root event and all replies
-ROOT_ID="<event-id>"
-nak req -e $ROOT_ID wss://relay.damus.io
-nak req --e-tag $ROOT_ID wss://relay.damus.io
-```
-
-### Get Reactions
-
-```bash
-# Reactions to an event
-nak req -k 7 --e-tag <event-id> wss://relay.damus.io
-
-# Count likes
-nak req -k 7 --e-tag <event-id> wss://relay.damus.io | \
-  jq -s 'map(select(.content == "+" or .content == "")) | length'
-```
-
-### Get Zaps
-
-```bash
-# Zap receipts for an event
-nak req -k 9735 --e-tag <event-id> wss://relay.damus.io
-
-# Total zapped
-nak req -k 9735 --e-tag <event-id> wss://relay.damus.io | \
-  jq -r '.tags[] | select(.[0]=="bolt11") | .[1]'
-```
-
-### Get Reposts
-
-```bash
-# Kind 6 reposts
-nak req -k 6 --e-tag <event-id> wss://relay.damus.io
-```
-
-## Verification
-
-### Verify Event Signature
-
-```bash
-# nak automatically verifies, but to check manually:
-nak verify < event.json
-```
-
-### Check NIP-05
-
-```bash
-# Verify NIP-05 identifier
-curl -s "https://example.com/.well-known/nostr.json?name=alice" | \
-  jq '.names.alice'
-```
-
-## One-Liners
-
-```bash
-# Random relay from nostr.watch
-curl -s https://api.nostr.watch/v1/online | jq -r '.[]' | shuf | head -1
-
-# Latest note from pubkey
-nak req -k 1 -a <pubkey> -l 1 wss://relay.damus.io | jq -r '.content'
-
-# Who does this person follow?
-nak req -k 3 -a <pubkey> wss://relay.damus.io | \
-  jq -r '.tags[] | select(.[0]=="p") | .[1]' | wc -l
-
-# What relays does this person use?
-nak req -k 10002 -a <pubkey> wss://relay.damus.io | \
-  jq -r '.tags[] | select(.[0]=="r") | "\(.[2] // "rw"): \(.[1])"'
-
-# Search for notes about bitcoin today
-SINCE=$(($(date +%s) - 86400))
-echo '["REQ","x",{"kinds":[1],"search":"bitcoin","since":'$SINCE'}]' | \
-  websocat -n wss://relay.nostr.band | jq -r '.[2].content' | head -20
-```
-
-## Environment Setup
-
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-
-# Default relay
-export NOSTR_RELAY="wss://relay.damus.io"
-
-# Your keys (be careful with nsec!)
-export NOSTR_PUBKEY="<your-pubkey-hex>"
-
-# Handy aliases
-alias nostr-req="nak req"
-alias nostr-pub="nak event"
-alias nostr-info="curl -s -H 'Accept: application/nostr+json'"
-
-# Quick note function
-nostr-note() {
-  nak event -c "$1" --sec $NOSTR_PRIVKEY $NOSTR_RELAY
-}
-```
-
-## See Also
-
-- [nak Documentation](https://github.com/fiatjaf/nak)
-- [websocat Documentation](https://github.com/vi/websocat)
-- [Relay Explorers](../relays/explorers)
-- [Protocol Overview](../protocol/overview)
+:::tip
+`relay.damus.io` often answers command-line tools with HTTP 503 while browsers connect fine. If a recipe fails there,
+use `wss://relay.primal.net`, `wss://relay.nostr.net` or `wss://nos.lol` instead.
+:::

@@ -6,247 +6,155 @@ description: Tools for syncing and bridging Nostr relays
 
 # Relay Sync Tools
 
-Tools and techniques for synchronizing events between relays.
+Ways to copy events between relays: a one-off sync with negentropy, continuous mirroring, and plain export and import. Use them to seed a new relay, back up your own notes, or keep two relays of a cluster in step.
 
-## Why Sync Relays?
+## Negentropy (NIP-77)
 
-- **Backup:** Replicate events to personal relay
-- **Migration:** Move from one relay to another
-- **Bridging:** Connect different relay networks
-- **Archiving:** Preserve historical events
+[NIP-77](https://github.com/nostr-protocol/nips/blob/master/77.md) adds `NEG-OPEN`, `NEG-MSG`, `NEG-CLOSE` and `NEG-ERR` messages. Two sides pick a filter and compare fingerprints of the event sets that match it, narrowing down range by range, until each side knows which IDs it has that the other lacks. Only then are events sent, with ordinary `EVENT` and `REQ`. When the two sets mostly overlap, this uses far less bandwidth than downloading everything.
 
-## Negentropy Sync (strfry)
+Both sides must support NIP-77. As of October 2026:
 
-strfry includes built-in negentropy sync for efficient relay-to-relay synchronization.
+| Software | NIP-77 |
+|---|---|
+| strfry | Yes, on by default (`relay.negentropy.enabled`) |
+| nostream | Yes, off by default (`nip77.enabled`, Postgres backend only) |
+| `nak serve` | With `--negentropy` |
+| nostr-rs-relay | No |
 
-### How It Works
+To find public relays that support it, query NIP-66 monitors for `N=77` ([Relay Explorers](./explorers.md)), or look for `77` in `supported_nips` in the relay's NIP-11 document.
 
-Negentropy is a set reconciliation protocol that efficiently determines which events differ between two relays without transferring all events.
+## nak sync
 
-### Sync Command
+**Tested** with nak v0.21.2 between two `nak serve --negentropy` relays.
 
 ```bash
-# Sync from remote relay to local
-strfry sync wss://relay.damus.io
-
-# Sync specific filter
-strfry sync wss://relay.damus.io --filter '{"kinds":[1],"limit":1000}'
-
-# Continuous sync
-strfry sync wss://relay.damus.io --continuous
+timeout 60 nak sync ws://localhost:10547 wss://relay.example.com
 ```
 
-### Configuration
+`nak sync` works in both directions: after it finishes, each relay has the events that matched on either side. Narrow it with the usual filter flags (`-k`, `-a`, `-t`, `-s`, `-u`, `-d`, `-p`); there is no `--filter` flag:
 
-Add to `strfry.conf`:
+```bash
+# only kind 1 notes from one author
+timeout 60 nak sync -k 1 -a <hex-pubkey> \
+  ws://localhost:10547 wss://relay.example.com
+```
 
-```yaml
-sync {
-    # Relays to sync with
-    upstreams = [
-        "wss://relay.damus.io",
-        "wss://nos.lol"
-    ]
+:::caution
+If either relay lacks NIP-77, `nak sync` hangs without an error (you only see a `NOTICE` such as `unknown envelope label`). Always wrap it in `timeout`.
+:::
 
-    # Filter for sync
-    filter = {
-        "kinds": [0, 1, 3, 7]
+## strfry sync
+
+From the [strfry README](https://github.com/hoytech/strfry) and the `strfry sync` usage text in the current source:
+
+```bash
+./strfry sync wss://relay.example.com
+./strfry sync wss://relay.example.com --dir both
+./strfry sync wss://relay.example.com --filter '{"authors":["..."]}'
+```
+
+| Flag | Meaning |
+|---|---|
+| `--dir` | `down` (fetch what you lack), `up` (send what they lack), `both`, or `none`. The usage text in the September 2026 source gives `both` as the default; the README says a plain `sync` downloads. Pass `--dir` explicitly. |
+| `--filter` | One filter object, or a JSON array of filters. Default `{}`, the whole database. |
+| `--range` | Time window, e.g. `2h-` (last 2 hours) or `1Y-6M` (from a year ago to six months ago). Units: `s m h d w M Y`. |
+| `--print-missing` | Only list the IDs that differ; transfer nothing. |
+| `--timeout` | Give up after this many seconds without activity (default `0`, never). |
+
+`strfry sync` is one-shot: it reconciles once and exits. There is no `--continuous` flag. A full-database sync against an empty local relay can use a lot of memory and bandwidth; sync with a filter or `--range` first.
+
+## Continuous mirroring
+
+### strfry router
+
+For a process that stays connected and streams events, strfry uses `strfry router` with its own config file, separate from `strfry.conf`:
+
+```bash
+strfry router strfry-router.config
+```
+
+This example is from strfry's [docs/router.md](https://github.com/hoytech/strfry/blob/master/docs/router.md):
+
+```
+connectionTimeout = 20
+
+verbose = false
+
+streams {
+    ## Stream down events from our friend relays
+
+    friends {
+        dir = "down"
+        pluginDown = "/home/user/spam-filter.js"
+
+        urls = [
+            "wss://nos.lol"
+            "wss://relayable.org"
+        ]
     }
 
-    # Sync interval (seconds)
-    interval = 300
+    ## Bi-directional streaming within our cluster
+
+    cluster {
+        dir = "both"
+
+        urls = [
+            "wss://eu.example.com"
+            "wss://na.example.com"
+        ]
+    }
+
+    ## Backup profiles and contact lists to our directory node
+
+    directory {
+        dir = "up"
+        filter = { "kinds": [0, 3] }
+
+        urls = [
+            "ws://internal-directory.example.com"
+        ]
+    }
 }
 ```
 
-## NAK (Nostr Army Knife)
+Each stream needs `dir` and `urls`. `filter` narrows what is streamed, and `pluginDown` / `pluginUp` run a [write-policy plugin](./configuration.md) on events in each direction. The router reconnects forever and reloads the file when it changes. A `down` stream only gets new events (it subscribes with `limit: 0`), so run `strfry sync` once first if you also want history.
 
-nak includes sync capabilities.
+For a single relay, `strfry stream wss://relay.example.com --dir down` (or `up`, `both`) does the same without a config file.
 
-### Installation
+### nostream mirroring
 
-```bash
-go install github.com/fiatjaf/nak@latest
-```
+nostream mirrors from other relays through `mirroring.static[]` in `.nostr/settings.yaml`. Each entry has an `address` (`ws://` or `wss://` URL), `filters` for the subscription, and optionally `limits.event` overrides, a `secret` (nostream-to-nostream only) and `skipAdmissionCheck`. The worker subscribes to the address with those filters and also forwards new local events to it. See [CONFIGURATION.md](https://github.com/cameri/nostream/blob/main/CONFIGURATION.md).
 
-### Sync Usage
+## Export and import
 
-```bash
-# Sync events from one relay to another
-nak sync wss://source-relay.com wss://destination-relay.com
-
-# With filter
-nak sync wss://source.com wss://dest.com --filter '{"authors":["pubkey"]}'
-```
-
-### Guide
-
-For detailed instructions, see: [NAK Sync Guide](https://habla.news/u/alex@gleasonator.dev/nak-sync)
-
-## Manual Sync Scripts
-
-### Export and Import
+**Tested** with nak v0.21.2. Back up your own events from a relay, then publish them to another. `nak req` closes after `EOSE`; `nak event` republishes an already-signed event unchanged (same ID and signature):
 
 ```bash
-# Export from one relay
-echo '["REQ","export",{"kinds":[1],"limit":10000}]' | \
-  websocat -n wss://source-relay.com > events.jsonl
+timeout 60 nak req -a <hex-pubkey> wss://relay.example.com > backup.jsonl
 
-# Process and publish to another relay
-cat events.jsonl | jq -c '.[2] // empty' | while read event; do
-  echo "[\"EVENT\",$event]" | websocat -n wss://dest-relay.com
-done
+while read -r ev; do
+  echo "$ev" | nak event ws://localhost:10547
+done < backup.jsonl
 ```
 
-### Sync Script
+Most relays cap how many events one `REQ` returns. For a long history, page backwards with `-u` (until) set to the oldest `created_at` you got, or use `nak sync` against a relay that supports NIP-77.
+
+strfry has bulk commands for its own database, from the README:
 
 ```bash
-#!/bin/bash
-# sync-events.sh
-
-SOURCE="wss://source-relay.com"
-DEST="wss://destination-relay.com"
-PUBKEY="your-pubkey-hex"
-
-# Fetch events from source
-echo "Fetching events from $SOURCE..."
-echo "[\"REQ\",\"sync\",{\"authors\":[\"$PUBKEY\"],\"limit\":1000}]" | \
-  timeout 30 websocat -n "$SOURCE" | \
-  jq -c 'select(.[0] == "EVENT") | .[2]' > /tmp/events.jsonl
-
-# Count events
-COUNT=$(wc -l < /tmp/events.jsonl)
-echo "Found $COUNT events"
-
-# Publish to destination
-echo "Publishing to $DEST..."
-cat /tmp/events.jsonl | while read event; do
-  echo "[\"EVENT\",$event]" | websocat -n "$DEST"
-  sleep 0.1  # Rate limiting
-done
-
-echo "Done!"
+cat my-nostr-dump.jsonl | ./strfry import
+./strfry download wss://relay.example.com --filter '{"kinds":[0]}' > my-events.jsonl
+./strfry scan '{"kinds":[0]}' | ./strfry upload wss://relay.example.com
 ```
 
-## Hyper-Nostr P2P Sync
+`strfry import` verifies signatures unless you pass `--no-verify`. nostream can import `.jsonl` and `.json` files too (see its README).
 
-hyper-nostr enables peer-to-peer relay synchronization.
+:::note Don't broadcast to every relay
+Pushing your events, especially your kind 10002 relay list, to every relay a monitor knows about is spam and works against the outbox model. Publish your relay list to your own write relays and a couple of indexers such as `wss://purplepag.es`.
+:::
 
-### Setup
+## See also
 
-```bash
-npm install -g hyper-nostr
-
-# Start relay with topic
-hyper-nostr 3338 nostr
-```
-
-### How It Works
-
-- Relays join a "topic" (DHT key)
-- Automatically discover peers
-- Sync events in real-time
-- No central coordinator needed
-
-### Use Cases
-
-- Distributed relay networks
-- Offline-first applications
-- Resilient sync infrastructure
-
-## RSS Bridges
-
-Sync content to/from RSS feeds.
-
-### nostrss
-
-Publish RSS feeds to Nostr.
-
-**Repository:** [github.com/Asone/nostrss](https://github.com/Asone/nostrss)
-
-```bash
-# Clone and configure
-git clone https://github.com/Asone/nostrss
-cd nostrss
-cp config.example.toml config.toml
-# Edit config.toml with your feeds and keys
-
-# Run
-cargo run
-```
-
-### atomstr
-
-Convert Nostr to Atom feeds.
-
-**Repository:** [git.sr.ht/~psic4t/atomstr](https://git.sr.ht/~psic4t/atomstr)
-
-## Mirroring
-
-### nostream Mirror Mode
-
-Configure nostream to mirror events from other relays:
-
-```bash
-MIRROR_ENABLED=true
-MIRROR_URLS="wss://relay.damus.io,wss://nos.lol"
-```
-
-### Custom Mirror Script
-
-```python
-#!/usr/bin/env python3
-# mirror.py
-
-import asyncio
-import json
-import websockets
-
-SOURCE = "wss://source-relay.com"
-DEST = "wss://dest-relay.com"
-
-async def mirror():
-    async with websockets.connect(SOURCE) as source:
-        async with websockets.connect(DEST) as dest:
-            # Subscribe to all events
-            await source.send(json.dumps(["REQ", "mirror", {"limit": 0}]))
-
-            async for message in source:
-                data = json.loads(message)
-                if data[0] == "EVENT":
-                    event = data[2]
-                    await dest.send(json.dumps(["EVENT", event]))
-                    print(f"Mirrored: {event['id'][:16]}...")
-
-asyncio.run(mirror())
-```
-
-## Update Relay Lists
-
-Publish your relay list (NIP-65) to multiple relays:
-
-```bash
-# Using nak
-for relay in $(curl -s https://api.nostr.watch/v1/online | jq -r '.[]'); do
-  nak event -c "" \
-    -t r=wss://relay1.com \
-    -t r=wss://relay2.com \
-    -t r=wss://relay3.com \
-    --kind 10002 \
-    --sec $PRIVKEY \
-    $relay
-done
-```
-
-## Best Practices
-
-1. **Rate limit** sync operations to avoid overloading relays
-2. **Use filters** to sync only needed events
-3. **Verify events** before publishing to destination
-4. **Monitor** sync progress and errors
-5. **Deduplicate** to avoid publishing duplicates
-
-## See Also
-
-- [Relay Explorers](./explorers)
-- [Relay Implementations](./implementations)
-- [Snippets Reference](../reference/snippets)
+- [Relay Explorers](./explorers.md): find relays that support NIP-77.
+- [Relay Implementations](./implementations.md)
+- [strfry docs/negentropy.md](https://github.com/hoytech/strfry/blob/master/docs/negentropy.md): how strfry implements the protocol.

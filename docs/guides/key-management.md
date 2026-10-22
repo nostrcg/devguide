@@ -1,276 +1,130 @@
 ---
 sidebar_position: 1
 title: Key Management
-description: Best practices for managing Nostr keys securely
+description: How Nostr apps should handle secret keys - signers first, NIP-49 ncryptsec when you must store one
 ---
 
 # Key Management
 
-Your private key is your identity in Nostr. This guide covers secure key management practices.
+A Nostr identity is one secp256k1 key pair. The secret key (`nsec`, or 32 bytes of hex) signs everything. Whoever holds it *is* the user. There is no password reset, and the protocol has no agreed way to rotate a key. Design your app so the key is exposed to as few places as possible.
 
-## Key Security Fundamentals
+## The order of preference
 
-:::danger Private Key Security
-Your private key grants full control over your Nostr identity. If compromised:
-- Someone can impersonate you forever
-- There's no password reset or account recovery
-- All your followers and reputation transfer to the attacker
+1. **Don't touch the key: use a signer.** On desktop that's a NIP-07 browser extension, on Android a NIP-55 signer app such as Amber, and anywhere a NIP-46 remote signer ("bunker"). Your app asks the signer to sign and never sees the key. The code is in [Building clients](./building-clients.md) and [Mobile development](./mobile-development.md). The wiki's [Signers & login](https://github.com/nostrcg/devguide/wiki/Extensions) page lists signers that are maintained in 2026.
+2. **If you must hold a key, store it encrypted** as a NIP-49 `ncryptsec`, and decrypt it only in memory when the user unlocks the app.
+3. **Never** store a raw `nsec` in `localStorage`, logs, analytics, crash reports or the clipboard. Never ask users to paste their main key into a website.
+
+:::caution Unrecommended NIPs
+The NIPs README marks these as **unrecommended**. Don't build new features on them:
+
+- **NIP-06** (deriving keys from a BIP-39 mnemonic): "prefer a single nsec". Back up with NIP-49 instead.
+- **NIP-26** (delegated event signing): "adds unnecessary burden for little gain". Use a NIP-46 bunker to let another app sign for you.
 :::
 
-### Security Principles
+## Generate and encrypt a key (NIP-49)
 
-1. **Never share your nsec** - Treat it like a password
-2. **Never paste into websites** - Use NIP-07 extensions
-3. **Use encrypted storage** - Password managers
-4. **Backup securely** - Multiple encrypted copies
-5. **Consider key separation** - Different keys for different purposes
+[NIP-49](https://github.com/nostr-protocol/nips/blob/master/49.md) encrypts a secret key with a password. It derives a key with scrypt and encrypts with XChaCha20-Poly1305. The result is a bech32 string that starts with `ncryptsec1`. nostr-tools 2.25.2 implements it (tested on Node 24, October 2026):
 
-## Storage Options
+```js
+import { generateSecretKey, getPublicKey } from 'nostr-tools/pure'
+import * as nip19 from 'nostr-tools/nip19'
+import * as nip49 from 'nostr-tools/nip49'
+import { bytesToHex } from 'nostr-tools/utils'
 
-### Browser Extensions (Recommended)
+// a new identity: 32 random bytes from a CSPRNG
+const sk = generateSecretKey()
+const pk = getPublicKey(sk)
+console.log(nip19.npubEncode(pk))
 
-Use NIP-07 extensions to sign without exposing keys:
+// encrypt for storage or backup (NIP-49); never store the raw key
+const password = 'correct horse battery staple' // from the user
+const ncryptsec = nip49.encrypt(sk, password)
 
-**Popular Extensions:**
-- [Alby](https://getalby.com) - Lightning + Nostr
-- [nos2x](https://github.com/fiatjaf/nos2x) - Minimal signer
-- [Flamingo](https://getflamingo.org) - Full-featured
+// later: unlock with the same password
+const unlocked = nip49.decrypt(ncryptsec, password)
+console.log(bytesToHex(unlocked) === bytesToHex(sk)) // true
 
-**Benefits:**
-- Key never exposed to websites
-- Permission prompts before signing
-- Works across all NIP-07 compatible apps
+// a wrong password throws
+try { nip49.decrypt(ncryptsec, 'wrong') } catch { console.log('wrong password rejected') }
 
-```javascript
-// App requests signature (never sees private key)
-if (window.nostr) {
-  const pubkey = await window.nostr.getPublicKey();
-  const signedEvent = await window.nostr.signEvent(unsignedEvent);
-}
+// NIP-49 test vector (password "nostr")
+const v = 'ncryptsec1qgg9947rlpvqu76pj5ecreduf9jxhselq2nae2kghhvd5g7dgjtcxfqtd67p9m0w57lspw8gsq6yphnm8623nsl8xn9j4jdzz84zm3frztj3z7s35vpzmqf6ksu8r89qk5z2zxfmu5gv8th8wclt0h4p'
+console.log(bytesToHex(nip49.decrypt(v, 'nostr')))
 ```
 
-### Password Managers
-
-Store your nsec in a password manager:
-
-- **1Password** - Business-grade security
-- **Bitwarden** - Open source
-- **KeePass** - Local storage
-
-**Tips:**
-- Store as a secure note
-- Include associated npub
-- Add relay hints
-
-### Hardware Wallets
-
-For maximum security, use hardware signing:
-
-- **Ledger** - Limited Nostr support
-- **Trezor** - Limited Nostr support
-- **DIY signers** - Custom implementations
-
-## Key Derivation
-
-### From Mnemonic (BIP-39)
-
-Generate keys from a seed phrase:
-
-```javascript
-import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
-import { wordlist } from '@scure/bip39/wordlists/english';
-import { HDKey } from '@scure/bip32';
-import { bytesToHex } from '@noble/hashes/utils';
-
-// Generate mnemonic
-const mnemonic = generateMnemonic(wordlist);
-console.log('Mnemonic:', mnemonic);
-// Save this securely!
-
-// Derive Nostr key (NIP-06 path)
-const seed = mnemonicToSeedSync(mnemonic);
-const hdKey = HDKey.fromMasterSeed(seed);
-const derived = hdKey.derive("m/44'/1237'/0'/0/0");
-
-const privateKey = bytesToHex(derived.privateKey);
+```text
+npub1wrkrg87mflm9dqkjdec3edl8rv8t53vedsc873ykgk7h7r2dwrgq7vckdz
+true
+wrong password rejected
+3501454135014541350145413501453fefb02227e449e57cf4d3a3ce05378683
 ```
 
-**NIP-06 Derivation Path:** `m/44'/1237'/<account>'/0/0`
+The last line matches the spec's test vector. Things to know:
 
-### Advantages of Mnemonic
+- **Cost:** `encrypt(sec, password, logn = 16)`. With `logn` 16, scrypt uses 64 MiB of memory and takes about 0.1 s. Each step up doubles both: 18 needs 256 MiB, 20 needs 1 GiB (about 2 s). Choose the highest value your slowest target device can handle.
+- **Key security byte:** the fourth argument records whether the key was ever handled insecurely: `0x00` known insecure, `0x01` not known to be, `0x02` (the default) not tracked.
+- nostr-tools normalises the password to Unicode NFKC, as the spec requires, so the same password typed on another device still works.
+- **Don't publish ncryptsec strings** to relays. Collecting many encrypted keys makes cracking easier.
+- Clear decrypted keys and passwords from memory when you are done, where your platform allows it (for example `sk.fill(0)` on the `Uint8Array`).
 
-- **Backup** - 12/24 words easier to write down
-- **Recovery** - Standard format, multiple implementations
-- **Multiple keys** - Derive many keys from one seed
+## Keys on the command line
 
-## Key Rotation
-
-Nostr doesn't have built-in key rotation, but you can migrate:
-
-### Migration Steps
-
-1. **Generate new keypair**
-2. **Announce migration** (kind 0 update mentioning new key)
-3. **Update NIP-05** verification
-4. **Notify followers** through old key
-5. **Republish important content** with new key
-
-### Migration Event
-
-```javascript
-const migrationNotice = {
-  kind: 1,
-  content: `Migrating to new key: ${newNpub}. Please follow my new account.`,
-  tags: [['p', newPubkey]]
-};
-```
-
-## Multiple Keys Strategy
-
-Consider using different keys for different purposes:
-
-| Key | Purpose | Security Level |
-|-----|---------|----------------|
-| Main | Primary identity | Maximum |
-| Testing | Development | Low |
-| Anonymous | Privacy-sensitive | Medium |
-| Bot | Automated posts | Medium |
-
-### Implementation
-
-```javascript
-const keys = {
-  main: { nsec: process.env.NOSTR_MAIN_NSEC },
-  testing: { nsec: process.env.NOSTR_TEST_NSEC },
-  bot: { nsec: process.env.NOSTR_BOT_NSEC }
-};
-
-function getKey(purpose) {
-  const key = keys[purpose];
-  if (!key) throw new Error(`Unknown key purpose: ${purpose}`);
-  return key;
-}
-```
-
-## Signing Delegation (NIP-26)
-
-Delegate signing authority without sharing main key:
-
-```javascript
-// Create delegation token
-const delegation = {
-  pubkey: delegateePubkey,
-  kind: 1,  // Only kind 1 events
-  since: Math.floor(Date.now() / 1000),
-  until: Math.floor(Date.now() / 1000) + 86400 * 30,  // 30 days
-};
-
-// Sign delegation
-const delegationToken = signDelegation(mainPrivateKey, delegation);
-
-// Delegatee includes in their events
-const event = {
-  kind: 1,
-  content: 'Posted on behalf of main account',
-  tags: [
-    ['delegation', mainPubkey, conditionsString, delegationToken]
-  ]
-};
-```
-
-## Remote Signing (NIP-46)
-
-Sign events from a separate device:
-
-```
-┌─────────────┐        Relay        ┌─────────────┐
-│  App/Client │◄──────────────────►│   Signer    │
-│  (bunker)   │   Encrypted msgs    │  (nsecApp)  │
-└─────────────┘                     └─────────────┘
-```
-
-### Benefits
-
-- Key stored on secure device
-- Works across multiple clients
-- Approve each signing request
-
-## Backup Best Practices
-
-### What to Backup
-
-- Private key (nsec)
-- Mnemonic phrase (if used)
-- Relay list
-- NIP-05 verification info
-
-### Backup Methods
-
-1. **Encrypted file** on multiple drives
-2. **Paper backup** in secure location
-3. **Split key** across multiple locations
-4. **Password manager** with 2FA
-
-### Recovery Testing
-
-Periodically verify your backups:
-
-```javascript
-import { nip19 } from 'nostr-tools';
-import { getPublicKey } from 'nostr-tools/pure';
-
-// Decode backup nsec
-const { type, data: sk } = nip19.decode(backupNsec);
-const pk = getPublicKey(sk);
-const npub = nip19.npubEncode(pk);
-
-// Verify it matches expected npub
-console.log('Restored npub:', npub);
-```
-
-## Common Mistakes
-
-### Avoid These
-
-1. **Sharing nsec publicly** - Even accidentally in screenshots
-2. **Storing in plain text** - Use encryption
-3. **Single backup** - Have multiple copies
-4. **No testing** - Verify backups work
-5. **Trusting random websites** - Use established tools
-
-### If Compromised
-
-1. **Stop using the key immediately**
-2. **Post migration notice** from compromised key
-3. **Generate new key** and update everywhere
-4. **Revoke NIP-05** verification
-5. **Alert your followers**
-
-## Tools
-
-### Key Generation
+[nak](https://github.com/nostrcg/devguide/wiki/NAK) reads the key from the `NOSTR_SECRET_KEY` environment variable. That keeps it out of `ps` and shell history, unlike `--sec`. Tested with nak v0.21.2:
 
 ```bash
-# Using nak
-nak key generate
+# a throwaway key for experiments
+export NOSTR_SECRET_KEY=$(nak key generate)
 
-# Using nostr-tools
-npx nostr-tools generate-key
+# its public key, as hex and as npub
+echo "$NOSTR_SECRET_KEY" | nak key public
+echo "$NOSTR_SECRET_KEY" | nak key public | nak encode npub
+
+# npub/nsec/nprofile/... back to hex
+nak decode npub1cwkxg4hjhyjq3ztkczxj0r77uwt9ztpx523cf4pjunk7r9836gqscqekyk
 ```
 
-### Key Verification
+`NOSTR_SECRET_KEY` can also hold an `ncryptsec` or a `bunker://` URL. With an `ncryptsec`, nak asks for the password each time it signs, so the plaintext key never sits in your environment:
 
 ```bash
-# Decode and verify
-nak decode nsec1...
-nak decode npub1...
-
-# Verify matching pair
-nak key public nsec1...
+export NOSTR_SECRET_KEY=ncryptsec1...
+# prompts: "type the password to decrypt your secret key"
+nak event -c 'signed with an encrypted key' ws://localhost:10547
 ```
 
-## See Also
+`nak key encrypt <secret> <password>` creates an ncryptsec, but it takes the password as an argument, so the password ends up in your shell history. Use it only with throwaway keys, or create the ncryptsec in code as above. If `NOSTR_SECRET_KEY` and `--sec` are both unset, nak signs with a per-machine default key (`nak key default`). Set the key explicitly so you don't publish under the wrong identity.
 
-- [Keys and Signing](../getting-started/keys-and-signing)
-- [NIP-06: Key Derivation](https://github.com/nostr-protocol/nips/blob/master/06.md)
-- [NIP-46: Remote Signing](https://github.com/nostr-protocol/nips/blob/master/46.md)
+## Backups
+
+- **Back up the `ncryptsec`**, not the raw nsec. Use a password manager, or paper kept in a separate place from the password.
+- **Test the restore:** decrypt the backup on another device and check that the public key matches before you rely on it.
+- A bunker or signer app may keep its own encrypted backup. Know where it is and how to export it.
+
+## Separate keys
+
+Use a different key for each purpose: your personal identity, a bot, a relay operator key, each test environment. If one leaks, the others are unaffected. Test keys should be generated fresh (`nak key generate`) and never used on the public network.
+
+## If a key leaks
+
+Nostr has no protocol-level revocation or rotation. A leaked key stays usable by whoever has it. What you can do:
+
+1. Generate a new key and set up the profile, follows and relay list (kinds 0, 3 and 10002) under it.
+2. Point your NIP-05 address (`name@yourdomain`) at the new public key. Clients re-check NIP-05 and will stop showing the old key as you. See [NIP-05 verification](./nip05-verification.md).
+3. Post from both keys that you have moved, and ask people to follow the new one.
+4. Revoke what the old key could reach: NIP-46 bunker sessions, NWC wallet connections, and accounts on services that log in with it.
+
+## Hardware and threshold signing
+
+Signing devices for Nostr are still rare. The wiki's [Signers & login](https://github.com/nostrcg/devguide/wiki/Extensions) page tracks the maintained options. Two directions are worth knowing:
+
+- **Remote signing (NIP-46):** the key lives on one device or server, and every app asks it to sign over a relay.
+- **Threshold keys (FROST):** the key is split into shares that must cooperate to sign, as in the Keep signer for Android. No single device ever holds the whole key.
+
+Phone keystores (iOS Keychain, Android Keystore) protect a stored key at rest, but the app still decrypts it into memory to sign. The Secure Enclave and most hardware-backed Android keys don't support secp256k1. See [Mobile development](./mobile-development.md).
+
+## Common mistakes
+
+- Generating keys with `Math.random()`. Use `generateSecretKey()` or another CSPRNG.
+- Passing secrets on the command line (`--sec nsec1…`), or printing them in logs or CI output.
+- Writing the raw key to `localStorage` or `AsyncStorage`.
+- Sending the user's nsec to your server "for convenience".
+- Treating a NIP-05 address as the identity. Follow and store **public keys**. NIP-05 is a pointer that can change.

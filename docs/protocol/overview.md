@@ -1,201 +1,78 @@
 ---
 sidebar_position: 1
 title: Protocol Overview
-description: A comprehensive look at the Nostr protocol
+description: A map of the Nostr protocol and of the pages in this section
 ---
 
 # Protocol Overview
 
-Nostr is a minimalist protocol for decentralized social networking and data sharing. This page provides a comprehensive overview of how the protocol works.
+Nostr is small. Clients sign JSON **events** and send them to **relays** over WebSockets. Relays store events and answer **filters**. Everything else is a convention on top, written up as a **NIP**. This section is the reference. Each topic has one page:
 
-## Design Principles
+| Page | What it covers |
+|---|---|
+| [Events](./events.md) | The event structure, how the id and signature are computed, tags, and creating and verifying events in code |
+| [Event kinds](./kinds.md) | What the `kind` number means, the four storage classes, and the kinds you'll meet first |
+| [Filters](./filters.md) | How to ask a relay for events, with nostr-tools examples |
+| [NIPs](./nips.md) | How the specs are organised, which ones to start with, and which not to build on |
+| [Relay communication](./relay-communication.md) | Every message on the wire, `OK`/`CLOSED` reasons, AUTH, and a raw WebSocket client |
+| [DID:Nostr](./did-nostr.md) | Using a Nostr key as a W3C Decentralized Identifier |
 
-Nostr was designed with these principles in mind:
+## Design
 
-1. **Simplicity** - The protocol should be easy to understand and implement
-2. **Resilience** - No single point of failure
-3. **Censorship resistance** - Users maintain control of their data
-4. **Verifiability** - All messages are cryptographically signed
+- **Signed data, untrusted servers.** Every event carries its author's signature, so relays can't forge or alter it. Clients verify events themselves.
+- **Dumb relays, smart clients.** Relays store and forward. Clients decide where to publish, where to read, and how to show things.
+- **No global state.** There is no central index or consensus. Each relay has its own subset of events, and users say where their events live ([NIP-65](https://github.com/nostr-protocol/nips/blob/master/65.md) relay lists).
+- **Extend by convention.** New features are new event kinds and tags, described in NIPs. Software ignores what it doesn't understand.
 
-## Protocol Layers
+![Protocol layers: transport, core protocol, NIPs, applications](/img/diagrams/protocol-stack.svg)
 
-![Protocol Stack](/img/diagrams/protocol-stack.svg)
+## The pieces
 
-## Core Components
+**Transport.** One WebSocket per relay (`wss://…`, or `ws://` for local development). Every message is a JSON array whose first element names the message type: `EVENT`, `REQ` and `CLOSE` from client to relay, and `EVENT`, `OK`, `EOSE`, `CLOSED` and `NOTICE` back. `AUTH` ([NIP-42](https://github.com/nostr-protocol/nips/blob/master/42.md)) and `COUNT` ([NIP-45](https://github.com/nostr-protocol/nips/blob/master/45.md)) are common extensions. → [Relay communication](./relay-communication.md)
 
-### Events
+**Events.** Seven fields: `id`, `pubkey`, `created_at`, `kind`, `tags`, `content`, `sig`. → [Events](./events.md)
 
-The fundamental data structure. Every piece of data in Nostr is an event.
+**Kinds.** An integer from 0 to 65535 that says what an event is. Its range also says how relays store it: regular, replaceable, ephemeral or addressable. → [Event kinds](./kinds.md)
 
-```json
-{
-  "id": "<32-bytes lowercase hex sha256>",
-  "pubkey": "<32-bytes lowercase hex secp256k1 public key>",
-  "created_at": "<unix timestamp in seconds>",
-  "kind": "<integer between 0 and 65535>",
-  "tags": [
-    ["<tag name>", "<value>", "<optional values>..."]
-  ],
-  "content": "<arbitrary string>",
-  "sig": "<64-bytes lowercase hex schnorr signature>"
-}
-```
+**Filters.** JSON objects that select events by id, author, kind, tag and time. → [Filters](./filters.md)
 
-[Learn more about Events →](./events)
+**Cryptography.** Keys are secp256k1. The public key is the 32-byte x-coordinate, written as 64 lowercase hex characters. The event id is the SHA-256 of a fixed JSON serialization, and `sig` is a [BIP-340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki) Schnorr signature of the id. → [Keys and signing](../getting-started/keys-and-signing.md)
 
-### Relays
+## A note, end to end
 
-Simple servers that accept, store, and forward events. They communicate with clients over WebSocket.
-
-**Relay responsibilities:**
-- Accept connections from clients
-- Validate incoming events
-- Store events (persistence policies vary)
-- Send events matching client subscriptions
-
-**Relay URL format:** `wss://relay.example.com` or `ws://localhost:7777`
-
-[Learn more about Relay Communication →](./relay-communication)
-
-### Clients
-
-Applications that users interact with. Clients:
-- Manage user keys
-- Create and sign events
-- Connect to relays
-- Parse and display events
-
-## Message Types
-
-Communication between clients and relays uses JSON arrays over WebSocket.
-
-### Client → Relay
-
-| Type | Format | Description |
-|------|--------|-------------|
-| `EVENT` | `["EVENT", <event>]` | Publish a signed event |
-| `REQ` | `["REQ", <sub-id>, <filter>...]` | Request events & subscribe |
-| `CLOSE` | `["CLOSE", <sub-id>]` | Close a subscription |
-| `AUTH` | `["AUTH", <event>]` | Authenticate (NIP-42) |
-| `COUNT` | `["COUNT", <sub-id>, <filter>...]` | Count matching events (NIP-45) |
-
-### Relay → Client
-
-| Type | Format | Description |
-|------|--------|-------------|
-| `EVENT` | `["EVENT", <sub-id>, <event>]` | Event matching subscription |
-| `OK` | `["OK", <event-id>, <bool>, <msg>]` | Acknowledgment of EVENT |
-| `EOSE` | `["EOSE", <sub-id>]` | End of stored events |
-| `CLOSED` | `["CLOSED", <sub-id>, <msg>]` | Subscription closed |
-| `NOTICE` | `["NOTICE", <message>]` | Human-readable message |
-| `AUTH` | `["AUTH", <challenge>]` | Authentication challenge |
-| `COUNT` | `["COUNT", <sub-id>, <count>]` | Count response |
-
-## Filters
-
-Clients request events using filter objects:
-
-```json
-{
-  "ids": ["<event-id>", "..."],
-  "authors": ["<pubkey>", "..."],
-  "kinds": [0, 1, 3],
-  "#e": ["<event-id>", "..."],
-  "#p": ["<pubkey>", "..."],
-  "since": 1234567890,
-  "until": 1234599999,
-  "limit": 100
-}
-```
-
-All conditions are AND. Multiple filters in a REQ are OR.
-
-[Learn more about Filters →](./filters)
-
-## Cryptography
-
-### Keys
-
-- **Algorithm:** secp256k1 (same as Bitcoin)
-- **Private key:** 32 bytes, used for signing
-- **Public key:** 32 bytes (x-coordinate only), serves as identity
-
-### Event ID
-
-The event ID is computed as:
+Alice posts. Bob is already subscribed to her notes on the same relay.
 
 ```
-id = sha256(serialize(event))
+Alice                         Relay                          Bob
+  │                             │                              │
+  │                             │ ◄── ["REQ","s",{authors:[A]}]│
+  │                             │ ── ["EOSE","s"] ───────────► │
+  │                             │                              │
+  │ ── ["EVENT",{note}] ──────► │                              │
+  │ ◄── ["OK",id,true,""] ───── │                              │
+  │                             │ ── ["EVENT","s",{note}] ───► │
+  │                             │                              │
 ```
 
-Where serialize produces:
-```json
-[0, pubkey, created_at, kind, tags, content]
-```
+In practice Alice publishes to her own write relays, and Bob's client finds those relays from her kind 10002 list. See [How Nostr works](../getting-started/how-nostr-works.md).
 
-### Signatures
+## What the protocol does and doesn't promise
 
-- **Algorithm:** Schnorr signatures (BIP-340)
-- **What's signed:** The event ID
-- **Format:** 64 bytes hex
+**It does:**
 
-## NIPs (Nostr Implementation Possibilities)
+- Events can't be forged or changed without the author's key.
+- Anyone can run a relay and anyone can write a client.
+- A user can take their events to any relay.
 
-NIPs are standards that extend the base protocol:
+**It doesn't:**
 
-| Category | Examples |
-|----------|----------|
-| **Core** | NIP-01 (Basic protocol) |
-| **Identity** | NIP-05 (DNS identifiers), NIP-19 (bech32 encoding) |
-| **Content** | NIP-23 (Long-form), NIP-94 (File metadata) |
-| **Interaction** | NIP-25 (Reactions), NIP-57 (Zaps) |
-| **Security** | NIP-42 (Authentication), NIP-44 (Encryption) |
+- **Delivery or storage.** Relays can go offline, drop events or refuse them.
+- **Deletion.** A deletion request ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)) asks relays to remove events. Copies may survive.
+- **Privacy by default.** Most events are public. Relays see your IP and your queries. Private messages need [NIP-17](https://github.com/nostr-protocol/nips/blob/master/17.md).
+- **Ordering.** `created_at` is set by the author's clock, and relays send events in no guaranteed order across relays.
 
-[Learn more about NIPs →](./nips)
+## Look things up
 
-## Event Flow Example
-
-Here's a complete example of posting and receiving a note:
-
-```
-Alice (Client)                 Relay                    Bob (Client)
-     │                           │                           │
-     │  Connect (WebSocket)      │                           │
-     │──────────────────────────►│                           │
-     │                           │  ◄───────────────────────│
-     │                           │      Connect              │
-     │                           │                           │
-     │  ["REQ", "feed", ...]     │                           │
-     │──────────────────────────►│      Subscribe            │
-     │                           │◄──────────────────────────│
-     │                           │  ["REQ", "global", ...]   │
-     │                           │                           │
-     │  ["EVENT", {note}]        │                           │
-     │──────────────────────────►│  Store & Forward          │
-     │                           │                           │
-     │  ◄─["OK", id, true]───────│                           │
-     │                           │──["EVENT","global",{note}]│
-     │                           │─────────────────────────►│
-     │                           │                           │
-```
-
-## Protocol Guarantees
-
-**What Nostr guarantees:**
-- Messages are cryptographically signed and verifiable
-- Anyone can run a relay
-- Anyone can build a client
-- Events cannot be forged
-
-**What Nostr does NOT guarantee:**
-- Message delivery (relays can go offline)
-- Permanent storage (relays have policies)
-- Privacy (events are typically public)
-- Real-time delivery (network conditions vary)
-
-## Next Steps
-
-- [Events in Detail](./events)
-- [Event Kinds](./kinds)
-- [Working with Filters](./filters)
-- [NIPs Reference](./nips)
+- [NIPs repository](https://github.com/nostr-protocol/nips), and [nips.nostr.com](https://nips.nostr.com) for searching it.
+- `nak nip 01` prints a NIP in your terminal, and `nak kind 1111` describes a kind.
+- The wiki's [Protocol basics](https://github.com/nostrcg/devguide/wiki/Protocol-Basics) puts the essentials on one page.

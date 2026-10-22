@@ -1,403 +1,79 @@
 ---
 sidebar_position: 4
 title: Implementing NIPs
-description: Guide to implementing Nostr Improvement Proposals
+description: How to read, implement and test Nostr Implementation Possibilities (NIPs)
 ---
 
 # Implementing NIPs
 
-This guide covers how to implement various NIPs in your Nostr applications.
+NIPs are **Nostr Implementation Possibilities**: short specs in [nostr-protocol/nips](https://github.com/nostr-protocol/nips). Only NIP-01 is required. Everything else is optional, and a NIP matters only when clients and relays actually implement it. This page covers how to approach a NIP, and points to the pages where the common ones are implemented with tested code.
 
-## Understanding NIP Structure
+## Read the NIP, then check reality
 
-NIPs typically define:
-- Event kinds to use
-- Tag formats
-- Content structure
-- Expected behavior
+1. **Read the NIP itself** on GitHub master, not a summary. NIPs change: kind 3's relay `content` is deprecated in favour of NIP-65, NIP-39 identities moved from kind 0 to kind 10011, and NIP-46 now separates the remote-signer key from the user key.
+2. **Check its status** in the [README](https://github.com/nostr-protocol/nips#list). Struck-through entries are **unrecommended**, among them NIP-04 (use NIP-17), NIP-06, NIP-26, NIP-28 and NIP-72 (use NIP-29), NIP-15 (use NIP-99) and NIP-90. Each NIP is also marked `draft` or `final`, and `optional` or `mandatory`.
+3. **Check the kind numbers** against the README's kinds table, and follow the NIP-01 ranges: 1000–9999 regular, 10000–19999 replaceable, 20000–29999 ephemeral, 30000–39999 addressable. Kinds 0 and 3 are replaceable too.
+4. **Look at an existing implementation.** nostr-tools, rust-nostr (nostr-sdk) and NDK implement most NIPs. Reading theirs shows you the edge cases, and testing against them catches interoperability bugs. See [Libraries](../libraries/overview.md).
+5. **Ask what clients actually do.** For anything with many implementations (threads, zaps, DMs), check what popular clients emit before you decide what to accept. Be strict in what you send and tolerant in what you read.
 
-## Essential NIPs
+## Where each NIP is implemented in this guide
 
-### NIP-01: Basic Protocol
+| NIP | What | Where |
+|---|---|---|
+| 01 | Events, filters, relay messages | [Events](../protocol/events.md), [Filters](../protocol/filters.md), [Relay communication](../protocol/relay-communication.md) |
+| 02, 51 | Follow lists, mute lists | [Social graph](./social-graph.md) |
+| 05 | `name@domain` identifiers | [NIP-05 verification](./nip05-verification.md) |
+| 07, 46, 55 | Signers | [Building clients](./building-clients.md), [Mobile development](./mobile-development.md) |
+| 10, 25, 27 | Replies, reactions, mentions | [Building clients](./building-clients.md) |
+| 11 | Relay information document | [Relay information](../reference/relay-info.md) |
+| 19 | `npub`, `nevent`, `naddr` … | [Keys and signing](../getting-started/keys-and-signing.md) |
+| 44 | Encryption | [Testing](./testing.md) (round-trip test). Use it through a signer's `nip44` methods |
+| 49 | Encrypted secret keys | [Key management](./key-management.md) |
+| 57 | Zaps | [Lightning zaps](./zaps.md) |
+| 65 | Relay lists, outbox model | [Building clients](./building-clients.md) |
+| 85 | Trusted assertions | [Social graph](./social-graph.md) |
+| All | Index and statuses | [NIPs overview](../protocol/nips.md), [NIP index](../reference/nip-index.md) |
 
-The foundation—every client must implement this.
+## Example: NIP-42 relay authentication
 
-```javascript
-// Event structure
-const event = {
-  id: '',      // sha256 of serialized event
-  pubkey: '',  // author's public key
-  created_at: Math.floor(Date.now() / 1000),
-  kind: 1,
-  tags: [],
-  content: '',
-  sig: ''      // Schnorr signature
-};
+NIP-42 isn't covered elsewhere in the guides, so here it is in full. A relay that requires AUTH sends a challenge and rejects writes or reads with an `auth-required:` prefix. The client signs a kind 22242 event containing the challenge and the relay URL, and retries. nostr-tools does the retry when you give it an `onauth` signer. Tested with nostr-tools 2.25.2 against `nak serve --auth`:
 
-// Signing
-import { finalizeEvent } from 'nostr-tools/pure';
-const signedEvent = finalizeEvent(event, secretKey);
+```js
+import { generateSecretKey, finalizeEvent } from 'nostr-tools/pure'
+import { SimplePool } from 'nostr-tools/pool'
+
+const sk = generateSecretKey()
+// a local test signer; in an app, use window.nostr or a BunkerSigner
+const signer = { signEvent: async t => finalizeEvent(t, sk) }
+const relays = [process.env.RELAY ?? 'ws://localhost:10547']
+const pool = new SimplePool()
+// sign the relay's kind 22242 challenge when it says auth-required
+const onauth = template => signer.signEvent(template)
+
+const note = await signer.signEvent({
+  kind: 1, created_at: Math.floor(Date.now() / 1000), tags: [], content: 'hello',
+})
+const results = await Promise.allSettled(pool.publish(relays, note, { onauth }))
+console.log(results.map(r => r.status === 'fulfilled' ? 'ok' : r.reason.message))
+
+// reads too: querySync has no onauth, so subscribe
+const reader = new SimplePool()
+reader.subscribeEose(relays, { ids: [note.id] }, {
+  onauth,
+  onevent: ev => console.log('read back', ev.id === note.id),
+})
 ```
 
-### NIP-02: Follow List
-
-Store who a user follows:
-
-```javascript
-// Create/update follow list
-const followList = {
-  kind: 3,
-  content: JSON.stringify({
-    'wss://relay.example.com': { read: true, write: true }
-  }),
-  tags: follows.map(f => ['p', f.pubkey, f.relay || '', f.petname || ''])
-};
-
-// Parse follow list
-function parseFollows(event) {
-  return event.tags
-    .filter(t => t[0] === 'p')
-    .map(t => ({
-      pubkey: t[1],
-      relay: t[2] || null,
-      petname: t[3] || null
-    }));
-}
+```text
+[ 'ok' ]
+read back true
 ```
 
-### NIP-05: DNS Verification
+Without `onauth`, the same publish fails with `auth-required: event`. `querySync` and `get` don't take `onauth`, so use `subscribe` or `subscribeEose` to read from relays that require AUTH. Authenticate only to relays the user chose: AUTH tells the relay who the user is.
 
-Verify identity via DNS:
+## Testing your implementation
 
-```javascript
-async function verifyNip05(identifier) {
-  const [name, domain] = identifier.split('@');
-  const url = `https://${domain}/.well-known/nostr.json?name=${name}`;
-
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.names && data.names[name]) {
-      return {
-        valid: true,
-        pubkey: data.names[name],
-        relays: data.relays?.[data.names[name]] || []
-      };
-    }
-  } catch (error) {
-    console.error('NIP-05 verification failed:', error);
-  }
-
-  return { valid: false };
-}
-
-// Server-side: /.well-known/nostr.json
-{
-  "names": {
-    "alice": "pubkey-hex-here"
-  },
-  "relays": {
-    "pubkey-hex-here": ["wss://relay.example.com"]
-  }
-}
-```
-
-### NIP-10: Thread Markers
-
-Implement proper threading:
-
-```javascript
-function createReply(replyingTo, rootEvent, content) {
-  const tags = [];
-
-  // Root reference
-  if (rootEvent) {
-    tags.push(['e', rootEvent.id, '', 'root']);
-  } else {
-    // This is a reply to a root event
-    tags.push(['e', replyingTo.id, '', 'root']);
-  }
-
-  // Reply reference
-  if (rootEvent) {
-    tags.push(['e', replyingTo.id, '', 'reply']);
-  }
-
-  // Author references
-  const mentionedPubkeys = new Set([replyingTo.pubkey]);
-  if (rootEvent) {
-    mentionedPubkeys.add(rootEvent.pubkey);
-  }
-  for (const pk of mentionedPubkeys) {
-    tags.push(['p', pk]);
-  }
-
-  return {
-    kind: 1,
-    content,
-    tags
-  };
-}
-```
-
-### NIP-19: Bech32 Encoding
-
-Handle human-readable identifiers:
-
-```javascript
-import { nip19 } from 'nostr-tools';
-
-// Encode
-const npub = nip19.npubEncode(pubkeyHex);
-const nsec = nip19.nsecEncode(secretKeyBytes);
-const noteId = nip19.noteEncode(eventIdHex);
-
-// With metadata
-const nprofile = nip19.nprofileEncode({
-  pubkey: pubkeyHex,
-  relays: ['wss://relay.example.com']
-});
-
-const nevent = nip19.neventEncode({
-  id: eventIdHex,
-  relays: ['wss://relay.example.com'],
-  author: pubkeyHex,
-  kind: 1
-});
-
-// Decode
-function parseNostrUri(str) {
-  try {
-    const { type, data } = nip19.decode(str);
-    switch (type) {
-      case 'npub':
-        return { type: 'pubkey', pubkey: data };
-      case 'note':
-        return { type: 'event', id: data };
-      case 'nprofile':
-        return { type: 'profile', ...data };
-      case 'nevent':
-        return { type: 'event', ...data };
-      case 'naddr':
-        return { type: 'address', ...data };
-      default:
-        return null;
-    }
-  } catch {
-    return null;
-  }
-}
-```
-
-### NIP-25: Reactions
-
-Like, dislike, or emoji reactions:
-
-```javascript
-function createReaction(targetEvent, reaction = '+') {
-  return {
-    kind: 7,
-    content: reaction,  // '+', '-', or emoji
-    tags: [
-      ['e', targetEvent.id],
-      ['p', targetEvent.pubkey]
-    ]
-  };
-}
-
-// Get reactions for an event
-async function getReactions(eventId) {
-  const events = await pool.querySync(relays, {
-    kinds: [7],
-    '#e': [eventId]
-  });
-
-  const counts = { '+': 0, '-': 0 };
-  const emojis = {};
-
-  for (const event of events) {
-    if (event.content === '+') counts['+']++;
-    else if (event.content === '-') counts['-']++;
-    else {
-      emojis[event.content] = (emojis[event.content] || 0) + 1;
-    }
-  }
-
-  return { counts, emojis };
-}
-```
-
-### NIP-57: Zaps (Lightning)
-
-Implement Lightning payments:
-
-```javascript
-// 1. Get zap endpoint from user's profile
-async function getZapEndpoint(pubkey) {
-  const profile = await getProfile(pubkey);
-  const lud16 = profile?.lud16;
-
-  if (!lud16) return null;
-
-  const [name, domain] = lud16.split('@');
-  const url = `https://${domain}/.well-known/lnurlp/${name}`;
-
-  const response = await fetch(url);
-  return response.json();
-}
-
-// 2. Create zap request
-function createZapRequest(recipientPubkey, eventId, amount, relays) {
-  return {
-    kind: 9734,
-    content: '',
-    tags: [
-      ['p', recipientPubkey],
-      ['amount', String(amount * 1000)],  // millisats
-      ['relays', ...relays],
-      ...(eventId ? [['e', eventId]] : [])
-    ]
-  };
-}
-
-// 3. Get invoice from LNURL endpoint
-async function getZapInvoice(zapEndpoint, zapRequest, amount) {
-  const signedRequest = await signEvent(zapRequest);
-  const encoded = encodeURIComponent(JSON.stringify(signedRequest));
-
-  const url = `${zapEndpoint.callback}?amount=${amount * 1000}&nostr=${encoded}`;
-  const response = await fetch(url);
-  const data = await response.json();
-
-  return data.pr;  // Lightning invoice
-}
-```
-
-## Advanced NIPs
-
-### NIP-42: Relay Authentication
-
-Handle authentication challenges:
-
-```javascript
-function handleAuthChallenge(challenge, relayUrl) {
-  const authEvent = {
-    kind: 22242,
-    content: '',
-    tags: [
-      ['relay', relayUrl],
-      ['challenge', challenge]
-    ],
-    created_at: Math.floor(Date.now() / 1000)
-  };
-
-  return signEvent(authEvent);
-}
-
-// In WebSocket handler
-ws.onmessage = async (msg) => {
-  const [type, ...data] = JSON.parse(msg.data);
-
-  if (type === 'AUTH') {
-    const challenge = data[0];
-    const authEvent = await handleAuthChallenge(challenge, ws.url);
-    ws.send(JSON.stringify(['AUTH', authEvent]));
-  }
-};
-```
-
-### NIP-44: Encryption
-
-Modern encryption for DMs:
-
-```javascript
-import { nip44 } from 'nostr-tools';
-
-// Encrypt
-function encryptMessage(senderSk, recipientPk, plaintext) {
-  const conversationKey = nip44.v2.utils.getConversationKey(
-    senderSk,
-    recipientPk
-  );
-  return nip44.v2.encrypt(plaintext, conversationKey);
-}
-
-// Decrypt
-function decryptMessage(recipientSk, senderPk, ciphertext) {
-  const conversationKey = nip44.v2.utils.getConversationKey(
-    recipientSk,
-    senderPk
-  );
-  return nip44.v2.decrypt(ciphertext, conversationKey);
-}
-```
-
-### NIP-65: Relay List Metadata
-
-User's relay preferences:
-
-```javascript
-// Publish relay list
-function createRelayListEvent(relays) {
-  return {
-    kind: 10002,
-    content: '',
-    tags: relays.map(r => {
-      if (r.read && r.write) return ['r', r.url];
-      if (r.read) return ['r', r.url, 'read'];
-      if (r.write) return ['r', r.url, 'write'];
-    }).filter(Boolean)
-  };
-}
-
-// Parse relay list
-function parseRelayList(event) {
-  return event.tags
-    .filter(t => t[0] === 'r')
-    .map(t => ({
-      url: t[1],
-      read: !t[2] || t[2] === 'read',
-      write: !t[2] || t[2] === 'write'
-    }));
-}
-```
-
-## Testing NIP Compliance
-
-```javascript
-// Verify event structure
-function validateEvent(event) {
-  const errors = [];
-
-  if (!event.id || event.id.length !== 64) {
-    errors.push('Invalid event ID');
-  }
-  if (!event.pubkey || event.pubkey.length !== 64) {
-    errors.push('Invalid pubkey');
-  }
-  if (typeof event.created_at !== 'number') {
-    errors.push('Invalid created_at');
-  }
-  if (typeof event.kind !== 'number') {
-    errors.push('Invalid kind');
-  }
-  if (!Array.isArray(event.tags)) {
-    errors.push('Invalid tags');
-  }
-  if (typeof event.content !== 'string') {
-    errors.push('Invalid content');
-  }
-  if (!event.sig || event.sig.length !== 128) {
-    errors.push('Invalid signature');
-  }
-
-  return errors;
-}
-```
-
-## See Also
-
-- [NIPs Repository](https://github.com/nostr-protocol/nips)
-- [Protocol Overview](../protocol/overview)
-- [Event Kinds](../protocol/kinds)
+- Test against a throwaway relay (`nak serve`, or `nak serve --auth` for NIP-42), never against public relays. [Testing](./testing.md) has a ready-made Vitest and Playwright setup.
+- Check your events with `nak verify`, and check your filters with nostr-tools' `matchFilter`.
+- Test with input you didn't write: real events pulled from relays (`nak req -l 200 wss://relay.primal.net > sample.jsonl`). Real data has missing tags, extra fields and odd encodings that hand-written fixtures don't.
+- Use the test vectors in the NIP, where it has them (NIP-44 and NIP-49 do).

@@ -1,367 +1,114 @@
 ---
 sidebar_position: 6
 title: Other Languages
-description: Nostr libraries for Swift, Kotlin, C#, and more
+description: Verified Nostr libraries for Kotlin, Swift, Dart, Java, C#, PHP, Ruby, C and more
 ---
 
 # Other Languages
 
-Nostr libraries are available in many programming languages. Here's a guide to libraries beyond the main ones.
+Libraries for languages without their own page. Every repo and package below was checked against GitHub and the package registry in October 2026. We haven't run code in these languages, so this page links to each project's own README instead of showing examples.
 
-## Swift (iOS/macOS)
+`🟢 active · 🟡 quiet (6–12 months) · 🔴 archived or dead · checked Oct 2026`
 
-### NostrKit
+:::tip Nostr Dev Kit bindings
+The Rust [nostr-sdk](./rust.md) is published for Kotlin, Swift, C#, Python and JavaScript from [nostrdevkit/nostr-sdk-ffi](https://github.com/nostrdevkit/nostr-sdk-ffi) (0.45.1). If your language is on that list, you get the same API and NIP coverage as Rust, documented in the [book](https://doc.nostrdevkit.org/).
+:::
 
-Native Swift library for Apple platforms.
+## Kotlin, Android and the JVM
 
-**Swift Package Manager:**
-```swift
-dependencies: [
-    .package(url: "https://github.com/nostr-protocol/nostr-kit.git", from: "1.0.0")
-]
-```
-
-```swift
-import NostrKit
-
-// Generate keys
-let keys = try Keys()
-print("Public key: \(keys.publicKey.npub)")
-
-// Create event
-let event = try Event(
-    kind: .textNote,
-    content: "Hello from Swift!",
-    signedBy: keys
-)
-
-// Connect to relay
-let relay = try await Relay(url: URL(string: "wss://relay.damus.io")!)
-try await relay.send(event)
-```
-
-### damus-io/nostr-sdk
-
-The SDK used by the Damus iOS client.
-
-```swift
-import NostrSDK
-
-let keypair = Keypair()
-let event = try TextNoteEvent(content: "Hello!", signedBy: keypair)
-```
-
-## Kotlin (Android)
-
-### nostrpostr
-
-Kotlin library for Android development.
-
-**Gradle:**
-```kotlin
-implementation("com.github.nicholasgraham:nostrpostr:1.0.0")
-```
+| Library | Notes | Status |
+|---|---|---|
+| **[Quartz](https://github.com/vitorpamplona/quartz)** | Amethyst's protocol layer, split out as a Kotlin Multiplatform library (JVM, Android, iOS, Linux): events, NIP-44, relay client, SQLite store | 🟢 2.0.0, Oct 2026 |
+| Nostr Dev Kit Kotlin | `org.nostrdevkit:nostr-sdk`, `-jvm`, `-kmp`. The old `org.rust-nostr` coordinates are frozen | 🟢 0.45.1 |
+| [nostr-java](https://github.com/tcheeric/nostr-java) | Java 21. Published to its own Maven repo (`https://maven.398ja.xyz/releases`), not Maven Central | 🟢 |
+| [nostr4j](https://github.com/NostrGameEngine/nostr4j) | Java client with Blossom and Wallet Connect support | 🟢 |
+| [nostr-spring-boot-starter](https://github.com/theborakompanioni/nostr-spring-boot-starter) | Spring Boot integration | 🟢 |
 
 ```kotlin
-import nostrpostr.*
-
-// Generate keys
-val keys = KeyPair.generate()
-println("npub: ${keys.publicKey.toNpub()}")
-
-// Create and sign event
-val event = Event(
-    kind = 1,
-    content = "Hello from Kotlin!",
-    tags = listOf()
-).sign(keys.privateKey)
+// build.gradle.kts
+implementation("com.vitorpamplona.quartz:quartz:2.0.0")
+// or the Nostr Dev Kit bindings
+implementation("org.nostrdevkit:nostr-sdk:0.45.1")
 ```
 
-### rust-nostr Kotlin bindings
+No maintained Scala library turned up; use one of the JVM libraries.
 
-Native bindings from rust-nostr:
+## Swift, iOS and macOS
 
-```kotlin
-import rust.nostr.sdk.*
+| Library | Notes | Status |
+|---|---|---|
+| **[nostr-sdk-swift](https://github.com/nostrdevkit/nostr-sdk-swift)** | Nostr Dev Kit bindings, via Swift Package Manager | 🟢 0.45.1 |
+| [nostrdb](https://github.com/damus-io/nostrdb) | Embedded event database in C, used by Damus and Notedeck | 🟢 |
+| [nostr-essentials](https://github.com/nostur-com/nostr-essentials) | Helpers from the Nostur client | 🟡 Mar 2026 |
+| [nostr-sdk-ios](https://github.com/nostr-sdk/nostr-sdk-ios) | Native Swift SDK | 🟡 last commit Jan 2026, release Feb 2025 |
 
-val keys = Keys.generate()
-val client = Client(keys)
+Add `https://github.com/nostrdevkit/nostr-sdk-swift` as a package dependency in Xcode or `Package.swift`. The older `rust-nostr/nostr-swift` repo is archived.
 
-client.addRelay("wss://relay.damus.io")
-client.connect()
+## Dart and Flutter
 
-client.publishTextNote("Hello from Kotlin!")
-```
+| Library | Notes | Status |
+|---|---|---|
+| **[ndk](https://github.com/relaystr/ndk)** | Outbox-aware SDK. Unrelated to the JavaScript NDK and to Nostr Dev Kit | 🟢 0.10.1 |
+| [dart_nostr](https://github.com/anasfik/nostr) | Client library | 🟡 last release Apr 2026 |
+| [nostr](https://github.com/ethicnology/dart-nostr) (pub.dev `nostr`) | Event and key primitives | 🟢 |
+| nostr-sdk-flutter | Nostr Dev Kit bindings | 🔴 unmaintained, says its README |
 
-## C# / .NET
-
-### NNostr
-
-.NET library for Nostr.
-
-**NuGet:**
 ```bash
-dotnet add package NNostr
+dart pub add ndk
 ```
 
-```csharp
-using NNostr;
+## C# and .NET
 
-// Generate keys
-var keys = new KeyPair();
-Console.WriteLine($"Public key: {keys.PublicKey.ToBech32()}");
+| Library | Install | Status |
+|---|---|---|
+| [NNostr](https://github.com/Kukks/NNostr) | `dotnet add package NNostr.Client` (not `NNostr`) | 🟢 0.0.55 |
+| Nostr Dev Kit C# | `dotnet add package Nostr.Sdk` | 🟢 0.45.1 |
+| [Nostra](https://github.com/lontivero/Nostra) (F#) | NuGet | 🟢 |
 
-// Create event
-var ev = new NostrEvent {
-    Kind = 1,
-    Content = "Hello from C#!",
-    CreatedAt = DateTimeOffset.UtcNow
-};
-ev.Sign(keys.PrivateKey);
+## PHP
 
-// Connect and publish
-var relay = new NostrRelay("wss://relay.damus.io");
-await relay.ConnectAsync();
-await relay.PublishEventAsync(ev);
-```
+[nostr-php](https://github.com/nostrver-se/nostr-php) (🟢) moved from the `swentel` GitHub account to `nostrver-se`, but the Composer name didn't change. The stable line is 1.9.x; 2.0.0 is still an alpha. Docs: [nostr-php.dev](https://nostr-php.dev).
 
-### NostrSharp
-
-Another .NET option:
-
-```csharp
-using NostrSharp;
-
-var client = new NostrClient();
-await client.ConnectAsync("wss://relay.damus.io");
-
-var filter = new NostrFilter { Kinds = new[] { 1 }, Limit = 10 };
-await foreach (var ev in client.SubscribeAsync(filter))
-{
-    Console.WriteLine(ev.Content);
-}
+```bash
+composer require swentel/nostr-php
 ```
 
 ## Ruby
 
-### nostr-ruby
-
-Ruby gem for Nostr.
+[nostr_ruby](https://github.com/dtonon/nostr-ruby) (🟢 0.3.1). The gem is `nostr_ruby`, with an underscore; `nostr-ruby` doesn't exist. The separate `nostr` gem (wilsonsilva) last released in April 2024.
 
 ```bash
-gem install nostr-ruby
+gem install nostr_ruby
 ```
 
-```ruby
-require 'nostr'
+## C, C++, Zig and others
 
-# Generate keys
-keypair = Nostr::Keypair.new
-puts "npub: #{keypair.public_key.to_bech32}"
+| Language | Library | Status |
+|---|---|---|
+| C | [libnostr-c](https://github.com/privkeyio/libnostr-c) | 🟢 |
+| C | [noscrypt](https://github.com/VnUgE/noscrypt): crypto only | 🟡 Jun 2026 |
+| C | [nostrdb](https://github.com/damus-io/nostrdb): embedded event database | 🟢 |
+| Perl | [Net::Nostr](https://metacpan.org/pod/Net::Nostr) (`cpanm Net::Nostr`) | 🟢 2.003 |
+| Zig | [zig-nostr/nostr](https://github.com/zig-nostr/nostr) | 🟢 small |
+| Haskell | [nostr.hs](https://github.com/delirehberi/nostr.hs) | 🟢 small |
+| Elixir | [nostr-elixir](https://github.com/nostrdevkit/nostr-elixir): Nostr Dev Kit bindings, no Hex release yet | 🟢 new |
 
-# Create event
-event = Nostr::Event.new(
-  kind: 1,
-  content: "Hello from Ruby!",
-  pubkey: keypair.public_key
-)
-event.sign(keypair.private_key)
+"Small" means a handful of contributors and stars: read the code before you depend on it.
 
-# Connect to relay
-relay = Nostr::Relay.new("wss://relay.damus.io")
-relay.connect
-relay.publish(event)
-```
+## Not found or dead
 
-## PHP
+These names appear in older guides, including earlier versions of this page. They don't exist or aren't maintained:
 
-### nostr-php
+| Name | What we found |
+|---|---|
+| "NostrKit" (`nostr-protocol/nostr-kit`) | No such repo |
+| `damus-io/nostr-sdk` | A 2023 fork of rust-nostr, not the SDK Damus uses |
+| "nostrpostr" / NostrPostr | 🔴 404, or no commits since 2023 |
+| NuGet `NNostr`, gem `nostr-ruby`, Composer `nostr-php/nostr-php`, Hex `nostrlib` | Not on their registries; see the real names above |
+| Maven `io.github.nostr4j` | No artifacts |
+| Dart `nostr_tools` | Last release 2023 |
 
-PHP library for Nostr.
+## Finding more
 
-```bash
-composer require nostr-php/nostr-php
-```
-
-```php
-<?php
-use Nostr\Key\KeyPair;
-use Nostr\Event\Event;
-use Nostr\Relay\Relay;
-
-// Generate keys
-$keys = KeyPair::generate();
-echo "npub: " . $keys->getPublicKey()->toBech32() . "\n";
-
-// Create event
-$event = new Event();
-$event->setKind(1);
-$event->setContent("Hello from PHP!");
-$event->sign($keys->getPrivateKey());
-
-// Publish
-$relay = new Relay("wss://relay.damus.io");
-$relay->publish($event);
-```
-
-## Elixir
-
-### nostrlib
-
-Elixir library for Nostr.
-
-```elixir
-# mix.exs
-{:nostrlib, "~> 0.1.0"}
-```
-
-```elixir
-alias Nostrlib.{Keys, Event, Relay}
-
-# Generate keys
-{public_key, private_key} = Keys.generate()
-
-# Create event
-event = Event.new(1, "Hello from Elixir!")
-signed_event = Event.sign(event, private_key)
-
-# Publish
-{:ok, relay} = Relay.connect("wss://relay.damus.io")
-Relay.publish(relay, signed_event)
-```
-
-## Dart/Flutter
-
-### nostr_tools
-
-Dart package for Flutter apps.
-
-```yaml
-# pubspec.yaml
-dependencies:
-  nostr_tools: ^1.0.0
-```
-
-```dart
-import 'package:nostr_tools/nostr_tools.dart';
-
-void main() async {
-  // Generate keys
-  final keyPair = generateKeyPair();
-  print('npub: ${keyPair.publicKey.toBech32()}');
-
-  // Create event
-  final event = Event(
-    kind: 1,
-    content: 'Hello from Flutter!',
-    pubkey: keyPair.publicKey,
-    createdAt: DateTime.now(),
-  );
-  event.sign(keyPair.privateKey);
-
-  // Connect to relay
-  final relay = await Relay.connect('wss://relay.damus.io');
-  await relay.publish(event);
-}
-```
-
-## Java
-
-### nostr4j
-
-Java library for Nostr.
-
-```xml
-<dependency>
-    <groupId>io.github.nostr4j</groupId>
-    <artifactId>nostr4j</artifactId>
-    <version>1.0.0</version>
-</dependency>
-```
-
-```java
-import nostr4j.*;
-
-// Generate keys
-KeyPair keys = KeyPair.generate();
-System.out.println("npub: " + keys.getPublicKey().toNpub());
-
-// Create event
-Event event = Event.builder()
-    .kind(1)
-    .content("Hello from Java!")
-    .build()
-    .sign(keys.getPrivateKey());
-
-// Publish
-Relay relay = new Relay("wss://relay.damus.io");
-relay.connect();
-relay.publish(event);
-```
-
-## C/C++
-
-### libnostr
-
-Low-level C library.
-
-```c
-#include <nostr.h>
-
-int main() {
-    // Generate keys
-    nostr_keypair_t *keys = nostr_keypair_generate();
-
-    // Create event
-    nostr_event_t *event = nostr_event_new();
-    nostr_event_set_kind(event, 1);
-    nostr_event_set_content(event, "Hello from C!");
-    nostr_event_sign(event, keys);
-
-    // Publish
-    nostr_relay_t *relay = nostr_relay_connect("wss://relay.damus.io");
-    nostr_relay_publish(relay, event);
-
-    // Cleanup
-    nostr_event_free(event);
-    nostr_keypair_free(keys);
-    nostr_relay_close(relay);
-
-    return 0;
-}
-```
-
-## Choosing a Library
-
-| Language | Best Choice | Notes |
-|----------|-------------|-------|
-| Swift | NostrKit | Native iOS/macOS |
-| Kotlin | rust-nostr bindings | High performance |
-| C# | NNostr | Full .NET support |
-| Ruby | nostr-ruby | Idiomatic Ruby |
-| PHP | nostr-php | Composer package |
-| Elixir | nostrlib | OTP friendly |
-| Dart | nostr_tools | Flutter support |
-| Java | nostr4j | JVM compatible |
-
-## Finding More Libraries
-
-- [Awesome Nostr](https://github.com/aljazceru/awesome-nostr#libraries) - Comprehensive list
-- [Nostr Protocol GitHub](https://github.com/nostr-protocol) - Official resources
-- Search package managers (npm, pip, cargo, etc.)
-
-## Contributing Libraries
-
-If you're building a library:
-
-1. Implement NIP-01 basics first
-2. Add comprehensive tests
-3. Document with examples
-4. Submit to Awesome Nostr
-5. Consider WebAssembly for cross-platform
-
-## See Also
-
-- [Libraries Overview](./overview)
-- [JavaScript Libraries](./javascript)
-- [Rust Libraries](./rust)
+- [awesome-nostr](https://github.com/aljazceru/awesome-nostr) lists many more libraries. In October 2026 it still linked several archived or moved repos, so check each one before you use it.
+- The [wiki's Libraries page](https://github.com/nostrcg/devguide/wiki/Libraries) is kept in sync with this one.

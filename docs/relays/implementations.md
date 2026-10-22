@@ -6,257 +6,85 @@ description: Overview of Nostr relay software options
 
 # Relay Implementations
 
-This page covers the major relay implementations available for running your own Nostr relay.
-
-## Quick Comparison
-
-| Relay | Language | Database | Best For | Difficulty |
-|-------|----------|----------|----------|------------|
-| strfry | C++ | LMDB | High performance | Medium |
-| nostream | TypeScript | PostgreSQL | Production features | Medium |
-| nostr-rs-relay | Rust | SQLite/PG | Easy setup | Easy |
-| khatru | Go | Custom | Custom relays | Medium |
-| fonstr | JavaScript | In-memory | Testing/dev | Easy |
-| hyper-nostr | JavaScript | Hyperbeedee | P2P sync | Easy |
-
-## strfry
-
-High-performance C++ relay with advanced features.
-
-**Repository:** [github.com/hoytech/strfry](https://github.com/hoytech/strfry)
-
-### Features
-
-- Extremely fast (handles millions of events)
-- LMDB database (memory-mapped, crash-resistant)
-- Negentropy sync protocol for relay-to-relay sync
-- Plugin system for custom policies
-- Low memory usage
-
-### Quick Start
-
-```bash
-git clone https://github.com/hoytech/strfry.git
-cd strfry
-git submodule update --init
-make setup-golpe
-make -j4
-./strfry relay
-```
-
-### Docker
-
-```bash
-docker run -p 7777:7777 -v $(pwd)/data:/app/strfry-db hoytech/strfry
-```
-
-### Supported NIPs
-
-NIP-01, NIP-02, NIP-04, NIP-09, NIP-11, NIP-12, NIP-15, NIP-16, NIP-20, NIP-22, NIP-26, NIP-28, NIP-33, NIP-40, NIP-42, NIP-45, NIP-50
-
-## nostream
-
-Production-ready TypeScript relay with rich features.
-
-**Repository:** [github.com/Cameri/nostream](https://github.com/Cameri/nostream)
-
-### Features
-
-- Docker-ready deployment
-- PostgreSQL for scalability
-- Payment integration (NIP-57)
-- Rate limiting and abuse prevention
-- Metrics and monitoring
-- Horizontal scaling support
-
-### Quick Start
-
-```bash
-git clone https://github.com/Cameri/nostream.git
-cd nostream
-cp .env.sample .env
-docker compose up -d
-```
-
-### Configuration
-
-Edit `.env`:
-
-```bash
-RELAY_NAME="My Nostream Relay"
-RELAY_PUBKEY="your-hex-pubkey"
-RELAY_CONTACT="admin@example.com"
-
-POSTGRES_HOST=db
-POSTGRES_PORT=5432
-POSTGRES_USER=nostr
-POSTGRES_PASSWORD=secure_password
-```
-
-## nostr-rs-relay
-
-Rust relay with SQLite, easy to set up.
-
-**Repository:** [github.com/scsibug/nostr-rs-relay](https://github.com/scsibug/nostr-rs-relay)
-
-### Features
-
-- Simple configuration
-- SQLite or PostgreSQL backend
-- Low resource usage
-- NIP-42 authentication
-- Configurable limits
-
-### Installation
-
-```bash
-# From cargo
-cargo install nostr-rs-relay
-
-# Run
-nostr-rs-relay --db ./nostr.db
-```
-
-### Docker
-
-```bash
-docker pull scsibug/nostr-rs-relay
-docker run -p 7777:8080 scsibug/nostr-rs-relay
-```
-
-With custom config:
-
-```bash
-docker run -it -p 7000:8080 \
-  --mount src=$(pwd)/config.toml,target=/usr/src/app/config.toml,type=bind \
-  --mount src=$(pwd)/data,target=/usr/src/app/db,type=bind \
-  nostr-rs-relay
-```
-
-## khatru
-
-Go relay framework for building custom relays.
-
-**Repository:** [github.com/fiatjaf/khatru](https://github.com/fiatjaf/khatru)
-
-### Features
-
-- Modular, extensible design
-- Build custom relay logic
-- Go ecosystem integration
-- Easy to embed in applications
-
-### Example
-
-```go
-package main
-
-import (
-    "github.com/fiatjaf/khatru"
-)
-
-func main() {
-    relay := khatru.NewRelay()
-
-    relay.StoreEvent = append(relay.StoreEvent, func(ctx context.Context, event *nostr.Event) error {
-        // Custom storage logic
-        return db.SaveEvent(event)
-    })
-
-    relay.QueryEvents = append(relay.QueryEvents, func(ctx context.Context, filter nostr.Filter) (chan *nostr.Event, error) {
-        // Custom query logic
-        return db.QueryEvents(filter)
-    })
-
-    relay.Start("0.0.0.0", 7777, nil)
-}
-```
-
-## fonstr
-
-Simple JavaScript relay for testing and development.
-
-**Repository:** [github.com/nostrapps/fonstr](https://github.com/nostrapps/fonstr)
-
-### Quick Start
-
-```bash
-npx fonstr
-```
-
-With HTTPS:
-
-```bash
-bin/relay.js -h
-```
-
-Requires `privkey.pem` and `fullchain.pem` in current directory.
-
-### Use Cases
-
-- Local development
-- Testing clients
-- Learning the protocol
-- Phone-based relay (experimental)
-
-## hyper-nostr
-
-Distributed relay using Hyperswarm for P2P sync.
-
-**Repository:** [github.com/Ruulul/hyper-nostr](https://github.com/Ruulul/hyper-nostr)
-
-### Features
-
-- P2P relay synchronization
-- Hyperswarm for peer discovery
-- Hyperbeedee database
-- No central coordination needed
-
-### Installation
-
-```bash
-npm install -g hyper-nostr
-hyper-nostr 3338 nostr
-```
-
-### Testing
-
-```bash
-echo '["REQ", "test", {}]' | websocat -n ws://localhost:3338/nostr
-```
-
-### Supported NIPs
-
-NIP-01, NIP-02, NIP-04, NIP-09, NIP-11, NIP-12, NIP-16, NIP-20, NIP-33, NIP-45, NIP-50
-
-## Python Relay
-
-Simple Python relay for learning.
-
-```bash
-pip install nostr-relay
-nostr-relay serve
-```
-
-## Choosing a Relay
-
-### For Production
-
-1. **strfry** - Best performance, complex setup
-2. **nostream** - Feature-rich, Docker-friendly
-
-### For Development
-
-1. **fonstr** - Quickest to start
-2. **nostr-rs-relay** - Simple and reliable
-
-### For Custom Use Cases
-
-1. **khatru** - Build exactly what you need
-2. **hyper-nostr** - P2P/distributed scenarios
-
-## See Also
-
-- [Running a Relay](./running-a-relay)
-- [Configuration](./configuration)
-- [Hosting Options](./hosting)
+Relay software that is maintained in October 2026, and what each is good for. To install one, go to [Running a Relay](./running-a-relay.md).
+
+`🟢 active · 🟡 quiet (6–12 months) · 🔴 archived or dead · checked Oct 2026`. Status is the last push or release on the canonical repo.
+
+## Which one?
+
+| You want… | Use |
+|---|---|
+| A local relay for development and tests | `nak serve` |
+| A fast public relay with negentropy sync | **strfry** |
+| A single binary on SQLite | **nostr-rs-relay** |
+| Postgres, paid admission, Tor/I2P, an admin console | **nostream** |
+| Your own relay logic in Go | **khatru** |
+| A personal relay with inbox, outbox, DMs and media | **HAVEN** |
+| A relay on an Android phone | **Citrine** |
+| Only notes from your web of trust | **WoT relay** |
+| An invite-only community relay | **pyramid** or **zooid** |
+
+## General-purpose relays
+
+| Relay | Status | Notes |
+|---|---|---|
+| [strfry](https://github.com/hoytech/strfry) (C++, LMDB) | 🟢 1.1.3 | Runs many large relays. The README lists NIPs 1, 2, 4, 9, 11, 28, 40, 42, 45, 70, 77. Negentropy sync, streaming, router, write-policy plugins, Prometheus `/metrics`. No search (NIP-50). |
+| [nostr-rs-relay](https://sr.ht/~gheartsfield/nostr-rs-relay/) (Rust, SQLite or Postgres) | 🟢 0.10.0 | Canonical repo on sourcehut; [GitHub](https://github.com/scsibug/nostr-rs-relay) is a mirror. NIP-05 gating, gRPC admission server, pay-to-relay. No NIP-77. |
+| [nostream](https://github.com/cameri/nostream) (TypeScript, Postgres + Redis) | 🟢 3.6.2 | Docker Compose setup and a `nostream` CLI. Admission fees through ZEBEDEE, LNbits, LNURL, Nodeless, OpenNode or NWC. NIP-42, 43, 45, 50, 66, 77 behind settings. Tor and I2P. |
+| [chorus](https://github.com/mikedilger/chorus) (Rust) | 🟡 Apr 2026 | Personal relay by default. Built-in Blossom server, NIP-86 management API. The author has marked Gossip idle; check activity before you depend on it. |
+| [rnostr](https://github.com/rnostr/rnostr) (Rust, LMDB) | 🟢 | Docker image `rnostr/rnostr`. |
+| [cagliostr](https://github.com/mattn/cagliostr) (C++, SQLite or Postgres) | 🟢 | Small and fast. |
+| [grain](https://github.com/0ceanSlim/grain) (Go, LMDB) | 🟢 | Configurable relay with a dashboard. |
+| [nostrcheck-server](https://github.com/quentintaranpino/nostrcheck-server) (TypeScript, MariaDB) | 🟢 | Relay, Blossom file hosting and NIP-05 in one. |
+| [servus](https://github.com/servus-social/servus) (Rust) | 🟢 | Relay, personal website and Blossom server in one binary. |
+| [HORNETS](https://github.com/HORNET-Storage/HORNETS-Nostr-Relay) (Go) | 🟢 | Relay with a dashboard; paid, public or invite-only. |
+| [wisp](https://github.com/privkeyio/wisp) (Zig, LMDB) | 🟢 | New. "Spider mode" pulls notes from people you follow. |
+| [nosflare](https://github.com/Spl0itable/nosflare) (JavaScript) | 🟢 | Serverless relay on Cloudflare Workers, Durable Objects and D1. |
+| [NNostr](https://github.com/Kukks/NNostr) (C#, Postgres) | 🟢 | .NET relay and client library. |
+| [nak serve](https://github.com/fiatjaf/nak) (Go, memory) | 🟢 v0.21.2 | Test relay at `ws://localhost:10547`. `--negentropy`, `--blossom`, `--auth` flags. Nothing is saved. |
+| [fonstr](https://github.com/nostrapps/fonstr) (JavaScript, memory) | 🟢 0.0.25 | Dev/test only. `npx fonstr`, 1,000 events in memory. NIP-11 only at `/relay/info` (not compliant in 0.0.25). For a relay on Android, use Citrine. |
+
+## Frameworks: build your own relay
+
+| Framework | Status | Notes |
+|---|---|---|
+| **khatru** (Go) | 🟢 | The usual way to write a relay with custom rules. It moved into the `fiatjaf.com/nostr` module: [docs](https://pkg.go.dev/fiatjaf.com/nostr/khatru), [source](https://gitworkshop.dev/fiatjaf.com/nostrlib). Includes LMDB, Bolt and mmm event stores, a Blossom server, NIP-29 helpers and ready-made policies. The old `github.com/fiatjaf/khatru` repo is archived. |
+| [rely](https://github.com/pippellia-btc/rely) (Go) | 🟢 v1.5.2 | Alternative Go framework. |
+| [nostr-relay](https://github.com/CodyTseng/nostr-relay) (TypeScript) | 🟢 | The README calls it WIP. Also a desktop app, [nostr-relay-tray](https://github.com/CodyTseng/nostr-relay-tray). |
+| [`nostr-relay-builder`](https://crates.io/crates/nostr-relay-builder) (Rust) | 🟢 0.44.1 (0.45 in alpha) | From [Nostr Dev Kit](https://github.com/nostrdevkit/nostr). Builds a relay inside your program. For tests with nostr-sdk 0.45, the `local-relay` feature's `MockRelay` is simpler: see [Rust](../libraries/rust.md#test-against-an-in-process-relay). |
+
+A tested khatru relay is on [Running a Relay](./running-a-relay.md).
+
+## Personal and community relays
+
+| Relay | Status | Notes |
+|---|---|---|
+| [HAVEN](https://github.com/barrydeen/haven) | 🟢 v1.2.2 | Four relays in one (private, chat, inbox, outbox) plus Blossom. Built on khatru. Moved from `bitvora/haven`. |
+| [Citrine](https://github.com/greenart7c3/Citrine) | 🟢 v3.2.0 | A relay that runs on Android. Install from Zapstore, F-Droid, Obtainium or GitHub releases. |
+| [WoT relay](https://github.com/barrydeen/wot-relay) | 🟡 v0.2.1 | Accepts notes only from your web of trust. Moved from `bitvora/wot-relay`. |
+| [chronicle](https://github.com/dtonon/chronicle) | 🟢 | Personal outbox relay with web-of-trust spam protection. |
+| [pyramid](https://github.com/fiatjaf/pyramid) | 🟢 | Invite-tree community relay. Built on khatru. |
+| [zooid](https://gitea.coracle.social/coracle/zooid) | 🟢 | Multi-tenant relay for Flotilla groups (NIP-29, 43, 86). Replaces frith and triflector. |
+
+For media, run a [Blossom](https://github.com/hzrd149/blossom) server: [blossom-server](https://github.com/hzrd149/blossom-server) (TypeScript), [route96](https://github.com/v0l/route96) (Rust), or the one built into HAVEN, chorus, servus or nostrcheck-server. Quick starts are on the wiki's [Run a relay](https://github.com/nostrcg/devguide/wiki/Tutorials) page.
+
+## Dead or archived
+
+| Project | Status |
+|---|---|
+| [hyper-nostr](https://github.com/Ruulul/hyper-nostr) | 🔴 No commits since May 2023. |
+| [nostr-relay on PyPI](https://pypi.org/project/nostr-relay/) (Python) | 🔴 Last release Jun 2024; fails to build on Python 3.14. |
+| [pyrelay](https://github.com/johnny423/pyrelay) (Python) | 🔴 No commits since Apr 2023. |
+| [saltivka](https://github.com/viktorvsk/saltivka) (Ruby) | 🔴 No commits since Jan 2024. |
+| [relay29](https://github.com/fiatjaf/relay29) | 🔴 Archived. Use `fiatjaf.com/nostr/nip29` or zooid. |
+| khatru and go-nostr on GitHub | 🔴 Archived. Use `fiatjaf.com/nostr`. |
+
+:::caution
+`cargo install nostr-rs-relay` installs crate 0.8.12 from August 2023. Use Docker or build from source instead.
+:::
+
+## See also
+
+- [Running a Relay](./running-a-relay.md)
+- [Configuration](./configuration.md)
+- [Relay Explorers](./explorers.md): which software public relays run, from their NIP-11 documents.

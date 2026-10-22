@@ -1,556 +1,197 @@
 ---
 sidebar_position: 7
 title: Social Graph
-description: Understanding and implementing Nostr's social graph
+description: Follows, mutes, follow suggestions, web-of-trust filtering and linked identities on Nostr
 ---
 
 # Social Graph
 
-Nostr's social graph is built from follow lists, forming the foundation for web of trust, content discovery, and spam prevention.
+Nostr has no central "friends" table. The social graph is a set of signed events, which any client can fetch and compute over. Use it to build the home feed, suggest people to follow, and keep spam out of replies and notifications.
 
-## Core Concepts
+## Building blocks
 
-### Follow Lists (NIP-02)
+| What | Kind | Spec | Notes |
+|---|---|---|---|
+| Follow list | 3 | [NIP-02](https://github.com/nostr-protocol/nips/blob/master/02.md) | Replaceable. One `["p", <hex>, <relay>, <petname>]` tag per follow. Its `content` relay JSON is deprecated: relays are in kind 10002 |
+| Mute list | 10000 | [NIP-51](https://github.com/nostr-protocol/nips/blob/master/51.md) | `p`, `t`, `word` and `e` tags. Private items are NIP-44-encrypted to yourself in `content` |
+| Follow sets | 30000 | NIP-51 | Named lists of people. Starter packs are kind 39089 |
+| Relay list | 10002 | [NIP-65](https://github.com/nostr-protocol/nips/blob/master/65.md) | Where to read each person's notes (see [Building clients](./building-clients.md)) |
+| Linked identities | 10011 | [NIP-39](https://github.com/nostr-protocol/nips/blob/master/39.md) | `["i", "github:alice", "<gist id>"]` tags |
+| Trusted assertions | 30382–30385, 10040 | [NIP-85](https://github.com/nostr-protocol/nips/blob/master/85.md) | Signed scores from providers the user chooses |
 
-Every Nostr user publishes a kind 3 event containing their follow list.
+A follow list is public and there's no "followers" event. To find who follows someone, query `{ kinds: [3], '#p': [pubkey] }`. Any answer is a lower bound: no relay has every follow list.
 
-```typescript
-interface FollowListEvent {
-  kind: 3;
-  pubkey: string;          // User's public key
-  tags: string[][];        // [["p", pubkey, relay?, petname?], ...]
-  content: string;         // Often empty, sometimes relay preferences
-  created_at: number;
-}
+## Read a follow list
 
-// Example follow list
-const followList = {
-  kind: 3,
-  pubkey: "userPubkey",
-  tags: [
-    ["p", "friend1Pubkey", "wss://relay.example.com", "alice"],
-    ["p", "friend2Pubkey", "wss://nos.lol"],
-    ["p", "friend3Pubkey"]
-  ],
-  content: "",
-  created_at: Math.floor(Date.now() / 1000)
-};
+`wss://purplepag.es` specialises in profiles and lists. Tested with nak v0.21.2; the key is just a well-known example:
+
+```bash
+PK=3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d
+
+# how many people does this key follow?
+nak req -k 3 -a $PK -l 1 wss://purplepag.es \
+  | jq '[.tags[] | select(.[0]=="p")] | length'
 ```
 
-### Fetching Follows
+In code, take the newest kind 3 per author. Fetch many lists in **one** request with a batched `authors` filter, not one request per person. This function, and the trust set built from it below, were tested with nostr-tools 2.25.2. For a key with 199 follows, it fetched every follow's list and built a set of 3,774 trusted keys in under a second:
 
-```typescript
-import { SimplePool } from 'nostr-tools';
+```js
+import { SimplePool } from 'nostr-tools/pool'
 
-async function getFollows(
-  pubkey: string,
-  pool: SimplePool,
-  relays: string[]
-): Promise<Set<string>> {
-  const events = await pool.querySync(relays, {
-    kinds: [3],
-    authors: [pubkey],
-    limit: 1
-  });
+const pool = new SimplePool()
+const INDEXERS = ['wss://purplepag.es', 'wss://relay.primal.net']
 
-  if (events.length === 0) return new Set();
-
-  const follows = new Set<string>();
-  for (const tag of events[0].tags) {
-    if (tag[0] === 'p' && tag[1]) {
-      follows.add(tag[1]);
+// newest kind 3 per author, fetched in batches (one REQ per batch, not per user)
+async function followLists(pubkeys, batch = 300) {
+  const latest = new Map()
+  for (let i = 0; i < pubkeys.length; i += batch) {
+    const authors = pubkeys.slice(i, i + batch)
+    for (const ev of await pool.querySync(INDEXERS, { kinds: [3], authors })) {
+      if ((latest.get(ev.pubkey)?.created_at ?? -1) < ev.created_at) latest.set(ev.pubkey, ev)
     }
   }
-
-  return follows;
+  const out = new Map()
+  for (const [pk, ev] of latest) {
+    out.set(pk, ev.tags.filter(t => t[0] === 'p' && /^[0-9a-f]{64}$/.test(t[1])).map(t => t[1]))
+  }
+  return out
 }
-```
 
-### Followers (Reverse Lookup)
-
-```typescript
-async function getFollowers(
-  pubkey: string,
-  pool: SimplePool,
-  relays: string[]
-): Promise<Set<string>> {
-  // Note: This can be expensive on large relays
-  const events = await pool.querySync(relays, {
-    kinds: [3],
-    '#p': [pubkey]
-  });
-
-  return new Set(events.map(e => e.pubkey));
+// keys within two hops: my follows, plus anyone followed by at least `min` of them
+async function trustedSet(me, min = 3) {
+  const mine = (await followLists([me])).get(me) ?? []
+  const counts = new Map()
+  for (const list of (await followLists(mine)).values()) {
+    for (const pk of new Set(list)) counts.set(pk, (counts.get(pk) ?? 0) + 1)
+  }
+  const trusted = new Set([me, ...mine])
+  for (const [pk, n] of counts) if (n >= min) trusted.add(pk)
+  return trusted
 }
 ```
 
-## Graph Distance
+## Update follows and mutes
 
-### Degrees of Separation
+Kinds 3 and 10000 are replaceable: each publish replaces the **whole** list. To add one follow, fetch the newest list, append a tag, and publish the result. Tested against `nak serve` with a throwaway key (`export NOSTR_SECRET_KEY=$(nak key generate)`, `R=ws://localhost:10547`, `NEW=<hex pubkey to follow>`):
 
-```typescript
-interface GraphNode {
-  pubkey: string;
-  distance: number;
-  path: string[];
-}
+```bash
+PK=$(echo "$NOSTR_SECRET_KEY" | nak key public)
 
-async function findDistance(
-  sourcePubkey: string,
-  targetPubkey: string,
-  pool: SimplePool,
-  relays: string[],
-  maxDepth: number = 3
-): Promise<GraphNode | null> {
-  if (sourcePubkey === targetPubkey) {
-    return { pubkey: targetPubkey, distance: 0, path: [sourcePubkey] };
-  }
-
-  const visited = new Set<string>([sourcePubkey]);
-  const queue: GraphNode[] = [{
-    pubkey: sourcePubkey,
-    distance: 0,
-    path: [sourcePubkey]
-  }];
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-
-    if (current.distance >= maxDepth) continue;
-
-    const follows = await getFollows(current.pubkey, pool, relays);
-
-    for (const followPubkey of follows) {
-      if (followPubkey === targetPubkey) {
-        return {
-          pubkey: targetPubkey,
-          distance: current.distance + 1,
-          path: [...current.path, targetPubkey]
-        };
-      }
-
-      if (!visited.has(followPubkey)) {
-        visited.add(followPubkey);
-        queue.push({
-          pubkey: followPubkey,
-          distance: current.distance + 1,
-          path: [...current.path, followPubkey]
-        });
-      }
-    }
-  }
-
-  return null;
-}
+nak req -k 3 -a $PK $R </dev/null > follows.jsonl
+if [ -s follows.jsonl ]; then
+  # newest list + one p tag (unless already there), as kind 3
+  jq -s -c --arg p $NEW 'max_by(.created_at) | {kind: 3, content,
+      tags: (if any(.tags[]; .[0]=="p" and .[1]==$p) then .tags
+             else .tags + [["p", $p]] end)}' follows.jsonl \
+    | nak event $R
+else
+  # an empty fetch is not an empty list
+  echo "no follow list found: not publishing"
+fi
 ```
 
-## Web of Trust
+:::danger An empty fetch is not an empty list
+If a client publishes a follow list built from a stale or partial copy, the user's follows are gone. Before you write, fetch kind 3 from the user's write relays and an indexer such as `wss://purplepag.es`, and keep the newest `created_at`. If you can't find the current list, refuse to write. Keep tags you don't understand, and leave `content` unchanged.
+:::
 
-### Trust Scoring
+## Apply the mute list
 
-```typescript
-interface TrustScore {
-  pubkey: string;
-  score: number;
-  distance: number;
-  mutualFollows: number;
-}
+Public mutes are tags. Private ones are a NIP-44-encrypted JSON array of tags in `content`, encrypted to the user's own key. Lists written by older clients may use NIP-04 there instead. `pool`, `where`, `me` and `signer` are set up as in [Building clients](./building-clients.md). Tested with a NIP-44-capable signer against `nak serve`:
 
-async function calculateTrust(
-  userPubkey: string,
-  targetPubkey: string,
-  pool: SimplePool,
-  relays: string[]
-): Promise<TrustScore> {
-  const userFollows = await getFollows(userPubkey, pool, relays);
-  const targetFollows = await getFollows(targetPubkey, pool, relays);
-  const targetFollowers = await getFollowers(targetPubkey, pool, relays);
+```js
+// the user's mute list (NIP-51): public tags, plus private ones encrypted to self
+async function loadMutes() {
+  const events = await pool.querySync(where, { kinds: [10000], authors: [me] })
+  const latest = events.reduce((a, b) => (!a || b.created_at > a.created_at ? b : a), null)
+  if (!latest) return { pubkeys: new Set(), words: [], hashtags: new Set() }
 
-  // Check direct relationship
-  const isFollowing = userFollows.has(targetPubkey);
-  const isFollowedBack = targetFollows.has(userPubkey);
-
-  // Count mutual follows
-  let mutualFollows = 0;
-  for (const follow of userFollows) {
-    if (targetFollowers.has(follow)) {
-      mutualFollows++;
+  let tags = [...latest.tags]
+  if (latest.content && signer.nip44) {
+    try {
+      tags = tags.concat(JSON.parse(await signer.nip44.decrypt(me, latest.content)))
+    } catch {
+      // older lists may use NIP-04 here; skip what you can't decrypt
     }
   }
-
-  // Calculate trust score
-  let score = 0;
-
-  if (isFollowing && isFollowedBack) {
-    score = 100; // Mutual follow
-  } else if (isFollowing) {
-    score = 80; // Direct follow
-  } else if (mutualFollows > 0) {
-    // Scale by mutual follows (max 70)
-    score = Math.min(70, mutualFollows * 10);
-  }
-
-  const distance = isFollowing ? 1 : (mutualFollows > 0 ? 2 : Infinity);
-
-  return { pubkey: targetPubkey, score, distance, mutualFollows };
-}
-```
-
-### Strong Set
-
-The "strong set" is a curated group of highly-trusted users used as a starting point for trust calculations.
-
-```typescript
-class StrongSet {
-  private members: Set<string>;
-  private pool: SimplePool;
-  private relays: string[];
-
-  constructor(
-    initialMembers: string[],
-    pool: SimplePool,
-    relays: string[]
-  ) {
-    this.members = new Set(initialMembers);
-    this.pool = pool;
-    this.relays = relays;
-  }
-
-  isMember(pubkey: string): boolean {
-    return this.members.has(pubkey);
-  }
-
-  async getDistanceFromStrongSet(pubkey: string): Promise<number> {
-    if (this.isMember(pubkey)) return 0;
-
-    for (const member of this.members) {
-      const follows = await getFollows(member, this.pool, this.relays);
-      if (follows.has(pubkey)) return 1;
-    }
-
-    // Check second degree
-    for (const member of this.members) {
-      const follows = await getFollows(member, this.pool, this.relays);
-      for (const follow of follows) {
-        const secondDegree = await getFollows(follow, this.pool, this.relays);
-        if (secondDegree.has(pubkey)) return 2;
-      }
-    }
-
-    return Infinity;
-  }
-
-  async trustScore(pubkey: string): Promise<number> {
-    const distance = await this.getDistanceFromStrongSet(pubkey);
-    switch (distance) {
-      case 0: return 100;
-      case 1: return 80;
-      case 2: return 50;
-      default: return 10;
-    }
-  }
-}
-```
-
-## Mute and Block Lists
-
-### Mute List (NIP-51)
-
-```typescript
-interface MuteList {
-  pubkeys: string[];       // Muted users
-  eventIds: string[];      // Muted threads
-  hashtags: string[];      // Muted topics
-  words: string[];         // Muted keywords
-}
-
-async function getMuteList(
-  pubkey: string,
-  pool: SimplePool,
-  relays: string[]
-): Promise<MuteList> {
-  const events = await pool.querySync(relays, {
-    kinds: [10000], // Public mute list
-    authors: [pubkey],
-    limit: 1
-  });
-
-  if (events.length === 0) {
-    return { pubkeys: [], eventIds: [], hashtags: [], words: [] };
-  }
-
-  const event = events[0];
+  const values = name => tags.filter(t => t[0] === name).map(t => t[1])
   return {
-    pubkeys: event.tags.filter(t => t[0] === 'p').map(t => t[1]),
-    eventIds: event.tags.filter(t => t[0] === 'e').map(t => t[1]),
-    hashtags: event.tags.filter(t => t[0] === 't').map(t => t[1]),
-    words: event.tags.filter(t => t[0] === 'word').map(t => t[1])
-  };
+    pubkeys: new Set(values('p')),
+    words: values('word').map(w => w.toLowerCase()),
+    hashtags: new Set(values('t').map(t => t.toLowerCase())),
+  }
 }
 
-function isContentMuted(
-  event: NostrEvent,
-  muteList: MuteList
-): boolean {
-  // Check author
-  if (muteList.pubkeys.includes(event.pubkey)) return true;
-
-  // Check event ID
-  if (muteList.eventIds.includes(event.id)) return true;
-
-  // Check hashtags
-  const eventHashtags = event.tags
-    .filter(t => t[0] === 't')
-    .map(t => t[1].toLowerCase());
-  if (muteList.hashtags.some(h => eventHashtags.includes(h.toLowerCase()))) {
-    return true;
-  }
-
-  // Check words
-  const content = event.content.toLowerCase();
-  if (muteList.words.some(w => content.includes(w.toLowerCase()))) {
-    return true;
-  }
-
-  return false;
+function isMuted(ev, mutes) {
+  if (mutes.pubkeys.has(ev.pubkey)) return true
+  if (ev.tags.some(t => t[0] === 't' && mutes.hashtags.has(t[1]?.toLowerCase()))) return true
+  const text = ev.content.toLowerCase()
+  return mutes.words.some(w => text.includes(w))
 }
 ```
 
-## Graph Analysis
+Apply mutes everywhere: feeds, replies, notifications, search and zap lists.
 
-### Common Follows
+## Recommend follows
 
-```typescript
-async function getCommonFollows(
-  pubkey1: string,
-  pubkey2: string,
-  pool: SimplePool,
-  relays: string[]
-): Promise<string[]> {
-  const follows1 = await getFollows(pubkey1, pool, relays);
-  const follows2 = await getFollows(pubkey2, pool, relays);
+Friends of friends: count who your follows follow, and drop the keys you already follow. Tested with nak v0.21.2 against `wss://purplepag.es`. The sample uses your first 20 follows:
 
-  return Array.from(follows1).filter(f => follows2.has(f));
+```bash
+PK=<hex pubkey>
+RELAY=wss://purplepag.es
+
+# who you follow
+nak req -k 3 -a $PK -l 1 $RELAY </dev/null \
+  | jq -r '.tags[] | select(.[0]=="p") | .[1]' \
+  | sort -u > mine.txt
+
+# who they follow, counted
+head -20 mine.txt | while read f; do
+  nak req -k 3 -a $f -l 1 $RELAY </dev/null \
+    | jq -r '.tags[] | select(.[0]=="p") | .[1]'
+done | sort | uniq -c | sort -rn \
+  | grep -v -F -f mine.txt | grep -v $PK | head -10
+```
+
+Each output line is a count and a pubkey. `</dev/null` stops nak from reading the loop's input as filters. Remove muted keys before you show the results. In an app, `followLists()` above gets the same counts in one batched request.
+
+## Web of trust
+
+Spam on an open protocol is handled with the graph, not by a central moderator:
+
+- **Client-side filtering:** show replies, notifications and DMs only from keys in `trustedSet()` (follows, plus keys followed by several of your follows), minus mutes. This is cheap and works offline once the lists are cached.
+- **Trusted assertions (NIP-85):** heavy graph maths (PageRank-style ranks, follower counts, report counts) is too much for a phone. A provider computes it and publishes signed kind 30382 events, one per user (`d` tag = pubkey), with tags such as `["rank", "89"]`. The user lists the providers they trust in kind 10040. Providers are still few in 2026.
+- **WoT relays:** relays such as [wot-relay](https://github.com/barrydeen/wot-relay) accept only notes from their owner's web of trust.
+
+See the wiki's [Social graph](https://github.com/nostrcg/devguide/wiki/Social-Graph) page for the services and their status.
+
+## Linked identities (NIP-39)
+
+Users claim accounts on other platforms with `i` tags in a **kind 10011** event: `["i", "<platform>:<identity>", "<proof>"]`. These claims are not kind 0 fields. For GitHub, the proof is a gist ID, and the gist, made by that user, must contain the user's `npub`. This check was tested against the example claim in NIP-39 (true for the right key, false for another key or another username):
+
+```js
+import * as nip19 from 'nostr-tools/nip19'
+
+// does github:<user> really claim this pubkey? (NIP-39, kind 10011 i tag)
+async function checkGithubClaim(pubkey, iTag) {
+  const [, claim, gistId] = iTag
+  const user = claim.slice('github:'.length).toLowerCase()
+  const res = await fetch(`https://api.github.com/gists/${encodeURIComponent(gistId)}`)
+  if (!res.ok) return false
+  const gist = await res.json()
+  if (gist.owner?.login?.toLowerCase() !== user) return false
+  // accept any gist file by that user that contains the npub
+  const npub = nip19.npubEncode(pubkey)
+  return Object.values(gist.files).some(f => f.content?.includes(npub))
 }
 ```
 
-### Suggested Follows
+Other platforms (Twitter, Mastodon, Telegram) define their own proof formats in NIP-39. Until you've checked a claim, show it as unverified.
 
-```typescript
-async function getSuggestedFollows(
-  userPubkey: string,
-  pool: SimplePool,
-  relays: string[],
-  limit: number = 20
-): Promise<string[]> {
-  const userFollows = await getFollows(userPubkey, pool, relays);
+## Linked data: did:nostr
 
-  // Count how many of user's follows also follow each person
-  const suggestions = new Map<string, number>();
+The W3C Nostr Community Group maps Nostr identities to linked data. `did:nostr:<64-hex pubkey>` resolves to a DID document holding the key, profile and follows. It is a Community Group draft ([did:nostr spec](https://nostrcg.github.io/did-nostr/)), not a NIP. See [did:nostr](../protocol/did-nostr.md).
 
-  for (const follow of userFollows) {
-    const theirFollows = await getFollows(follow, pool, relays);
+## Related
 
-    for (const suggested of theirFollows) {
-      // Don't suggest people already followed or self
-      if (!userFollows.has(suggested) && suggested !== userPubkey) {
-        suggestions.set(suggested, (suggestions.get(suggested) || 0) + 1);
-      }
-    }
-  }
-
-  // Sort by frequency and return top suggestions
-  return Array.from(suggestions.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([pubkey]) => pubkey);
-}
-```
-
-### Influence Score
-
-```typescript
-async function calculateInfluence(
-  pubkey: string,
-  pool: SimplePool,
-  relays: string[],
-  depth: number = 2
-): Promise<number> {
-  const followers = await getFollowers(pubkey, pool, relays);
-
-  if (depth <= 1) {
-    return followers.size;
-  }
-
-  let influence = followers.size;
-
-  for (const follower of followers) {
-    const secondaryFollowers = await getFollowers(follower, pool, relays);
-    influence += secondaryFollowers.size * (1 / depth);
-  }
-
-  return influence;
-}
-```
-
-## Graph Caching
-
-### In-Memory Cache
-
-```typescript
-class SocialGraphCache {
-  private followsCache: Map<string, Set<string>> = new Map();
-  private followersCache: Map<string, Set<string>> = new Map();
-  private cacheTimestamps: Map<string, number> = new Map();
-  private maxAge: number = 5 * 60 * 1000; // 5 minutes
-
-  async getFollows(
-    pubkey: string,
-    pool: SimplePool,
-    relays: string[]
-  ): Promise<Set<string>> {
-    const cacheKey = `follows:${pubkey}`;
-    const cached = this.followsCache.get(pubkey);
-    const timestamp = this.cacheTimestamps.get(cacheKey);
-
-    if (cached && timestamp && Date.now() - timestamp < this.maxAge) {
-      return cached;
-    }
-
-    const follows = await getFollows(pubkey, pool, relays);
-    this.followsCache.set(pubkey, follows);
-    this.cacheTimestamps.set(cacheKey, Date.now());
-
-    return follows;
-  }
-
-  invalidate(pubkey: string) {
-    this.followsCache.delete(pubkey);
-    this.followersCache.delete(pubkey);
-    this.cacheTimestamps.delete(`follows:${pubkey}`);
-    this.cacheTimestamps.delete(`followers:${pubkey}`);
-  }
-}
-```
-
-## Proof of Following
-
-Demonstrate follow relationship cryptographically.
-
-```typescript
-interface FollowProof {
-  follower: string;
-  followee: string;
-  followListEvent: NostrEvent;
-  verified: boolean;
-}
-
-async function createFollowProof(
-  followerPubkey: string,
-  followeePubkey: string,
-  pool: SimplePool,
-  relays: string[]
-): Promise<FollowProof | null> {
-  const events = await pool.querySync(relays, {
-    kinds: [3],
-    authors: [followerPubkey],
-    limit: 1
-  });
-
-  if (events.length === 0) return null;
-
-  const followListEvent = events[0];
-  const hasFollow = followListEvent.tags.some(
-    t => t[0] === 'p' && t[1] === followeePubkey
-  );
-
-  return {
-    follower: followerPubkey,
-    followee: followeePubkey,
-    followListEvent,
-    verified: hasFollow
-  };
-}
-```
-
-## Identity Interoperability
-
-### Linking External Identities
-
-Nostr supports linking to external identity systems via NIP-39.
-
-```typescript
-interface IdentityLink {
-  platform: string;
-  identity: string;
-  proof: string;
-}
-
-async function getIdentityLinks(
-  pubkey: string,
-  pool: SimplePool,
-  relays: string[]
-): Promise<IdentityLink[]> {
-  const events = await pool.querySync(relays, {
-    kinds: [0],
-    authors: [pubkey],
-    limit: 1
-  });
-
-  if (events.length === 0) return [];
-
-  const profile = JSON.parse(events[0].content);
-
-  // Check for identity claims in profile
-  const links: IdentityLink[] = [];
-
-  // GitHub
-  if (profile.github) {
-    links.push({
-      platform: 'github',
-      identity: profile.github,
-      proof: `https://gist.github.com/${profile.github}`
-    });
-  }
-
-  // Twitter
-  if (profile.twitter) {
-    links.push({
-      platform: 'twitter',
-      identity: profile.twitter,
-      proof: '' // Would need to verify tweet
-    });
-  }
-
-  return links;
-}
-```
-
-### DID:Nostr
-
-Nostr keys can be expressed as Decentralized Identifiers.
-
-```typescript
-function pubkeyToDid(pubkey: string): string {
-  return `did:nostr:${pubkey}`;
-}
-
-function didToPubkey(did: string): string | null {
-  if (!did.startsWith('did:nostr:')) return null;
-  return did.slice(10);
-}
-```
-
-## Best Practices
-
-1. **Cache aggressively** - Follow lists change infrequently
-2. **Limit graph depth** - 2-3 degrees is usually sufficient
-3. **Use pagination** - Large follower sets can be massive
-4. **Consider privacy** - Some users have encrypted follow lists
-5. **Handle missing data** - Not all users have follow lists
-
-## See Also
-
-- [Feed Algorithms](./algorithms)
-- [Protocol Filters](../protocol/filters)
-- [Keys and Signing](../getting-started/keys-and-signing)
+- [Feed algorithms](./algorithms.md): ranking feeds on top of this graph.
+- [Building clients](./building-clients.md): loading follows and their relays.

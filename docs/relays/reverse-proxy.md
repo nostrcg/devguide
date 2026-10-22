@@ -6,121 +6,43 @@ description: Setting up reverse proxy for Nostr relays
 
 # Reverse Proxy Configuration
 
-A reverse proxy handles SSL termination and routes traffic to your relay. This page covers setup for popular options.
+Relays speak plain `ws://`. A reverse proxy in front adds TLS so clients can connect to `wss://relay.example.com`. The nginx, Caddy and HAProxy configs below were tested in October 2026 against a local relay (`nak serve`, and a khatru relay): they pass WebSocket upgrades, NIP-11 requests and the client's real IP.
 
-## Why Use a Reverse Proxy?
+## What every proxy must do
 
-- **SSL/TLS termination** - Handle HTTPS/WSS encryption
-- **Automatic certificates** - Let's Encrypt integration
-- **Load balancing** - Distribute traffic across multiple relays
-- **Security** - Hide relay server, add rate limiting
-- **Static content** - Serve NIP-11 info and landing pages
+| Job | Why |
+|---|---|
+| Pass the WebSocket upgrade (`Upgrade` and `Connection` headers, HTTP/1.1 to the backend) | Without it, clients get a 400 or a plain HTTP page. |
+| Keep idle connections open for a long time | Clients hold one socket for hours. Default proxy timeouts (60 s) drop them. Keep strfry's `autoPingSeconds` below the timeout. |
+| Send `GET /` with `Accept: application/nostr+json` to the relay | That is the [NIP-11](../reference/relay-info.md) document. If a website shares the host, don't let it catch these requests. |
+| Put the client IP in a header the relay trusts | Rate limits and IP bans need the real IP, not `127.0.0.1`. |
 
-## Caddy (Recommended)
+:::danger Overwrite `X-Forwarded-For`, don't append
+nginx's `$proxy_add_x_forwarded_for` and HAProxy's `option forwardfor` add the client's IP after whatever the client sent. khatru-based relays (including HAVEN) take the first public IP in the header, so a client could forge its IP. Use `$remote_addr` in nginx and `set-header` in HAProxy. Caddy replaces the header by default. Bind the relay itself to `127.0.0.1` so only the proxy can reach it.
+:::
 
-Caddy is the simplest option with automatic HTTPS.
+Then tell the relay which header to read:
 
-### Installation
+| Relay | Setting |
+|---|---|
+| strfry | `relay.realIpHeader = "x-real-ip"` in `strfry.conf` (lower case) |
+| nostr-rs-relay | `remote_ip_header = "x-forwarded-for"` in `[network]` |
+| nostream | `network.remoteIpHeader` and `network.trustedProxies` in `.nostr/settings.yaml` |
+| khatru-based relays, HAVEN | always read `X-Forwarded-For`; bind to `127.0.0.1` |
 
-```bash
-# Ubuntu/Debian
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install caddy
-```
-
-### Basic Configuration
-
-Edit `/etc/caddy/Caddyfile`:
-
-```
-relay.example.com {
-    reverse_proxy localhost:7777
-}
-```
-
-That's it! Caddy automatically obtains and renews SSL certificates.
-
-### Advanced Configuration
-
-```
-relay.example.com {
-    # Handle WebSocket upgrades
-    @websocket {
-        header Upgrade websocket
-    }
-    reverse_proxy @websocket localhost:7777
-
-    # Handle NIP-11 info requests
-    @nostr_info {
-        header Accept application/nostr+json
-    }
-    reverse_proxy @nostr_info localhost:7777
-
-    # Serve static landing page
-    file_server {
-        root /var/www/relay
-    }
-
-    # Enable compression
-    encode gzip
-
-    # Logging
-    log {
-        output file /var/log/caddy/relay.log
-    }
-}
-```
-
-### Apply Configuration
-
-```bash
-sudo systemctl reload caddy
-```
+Key details are on [Configuration](./configuration.md).
 
 ## nginx
 
-More control, but requires manual certificate management.
-
-### Installation
-
-```bash
-sudo apt install nginx certbot python3-certbot-nginx
-```
-
-### Get SSL Certificate
-
-```bash
-sudo certbot certonly --nginx -d relay.example.com
-```
-
-### Configuration
-
-Create `/etc/nginx/sites-available/relay`:
+The `location` block was tested with nginx 1.28 against a relay; the whole server block passes `nginx -t` with a test certificate. The certificate paths are the ones `certbot --nginx` creates.
 
 ```nginx
-# Redirect HTTP to HTTPS
 server {
-    listen 80;
+    listen 443 ssl;
     server_name relay.example.com;
-    return 301 https://$server_name$request_uri;
-}
-
-# Main server block
-server {
-    listen 443 ssl http2;
-    server_name relay.example.com;
-
-    # SSL configuration
-    ssl_certificate /etc/letsencrypt/live/relay.example.com/fullchain.pem;
+    ssl_certificate     /etc/letsencrypt/live/relay.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/relay.example.com/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
 
-    # WebSocket proxy
     location / {
         proxy_pass http://127.0.0.1:7777;
         proxy_http_version 1.1;
@@ -128,156 +50,94 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
-
-        # WebSocket timeouts
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
+        proxy_read_timeout 1d;
+        proxy_send_timeout 1d;
     }
 }
 ```
 
-### Enable Site
+Get the certificate (from strfry's [DEPLOYMENT.md](https://github.com/hoytech/strfry/blob/master/docs/DEPLOYMENT.md)):
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/relay /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
+sudo apt install nginx certbot python3-certbot-nginx
+sudo certbot --nginx -d relay.example.com
 ```
 
-### Auto-Renew Certificates
+The Debian and Ubuntu certbot package renews certificates with a systemd timer, so you don't need a cron job. For HTTP/2 on nginx 1.25.1 and later, add `http2 on;` inside the `server` block rather than `listen 443 ssl http2`. If the relay also serves Blossom uploads, add `client_max_body_size 100m;` (the default is 1 MB).
 
-```bash
-# Test renewal
-sudo certbot renew --dry-run
+## Caddy
 
-# Add to crontab
-sudo crontab -e
-# Add: 0 3 * * * certbot renew --quiet && systemctl reload nginx
+Caddy gets a certificate by itself, proxies WebSocket upgrades without extra config, and sets `X-Forwarded-For` to the real client IP. Tested with Caddy 2.11. Install it from the [Caddy docs](https://caddyserver.com/docs/install).
+
+**Relay only:**
+
+```caddyfile
+relay.example.com {
+	reverse_proxy localhost:7777
+}
 ```
+
+**Relay and a website on the same domain.** WebSocket and NIP-11 requests go to the relay; everything else gets the static site:
+
+```caddyfile
+relay.example.com {
+	@websocket {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	reverse_proxy @websocket localhost:7777
+
+	@nip11 header Accept *application/nostr+json*
+	reverse_proxy @nip11 localhost:7777
+
+	root * /var/www/html
+	file_server
+}
+```
+
+The `@nip11` matcher only helps relays that answer NIP-11 at their WebSocket URL. fonstr 0.0.25 serves it at `/relay/info` instead.
 
 ## HAProxy
 
-For high-availability and load balancing.
-
-### Configuration
+The `frontend` and `backend` were tested with HAProxy 3.2, and the whole file passes `haproxy -c`. `timeout tunnel` keeps WebSockets open after the upgrade. The `.pem` holds the certificate and key together, as in the [nostr-rs-relay reverse-proxy guide](https://github.com/scsibug/nostr-rs-relay/blob/master/docs/reverse-proxy.md).
 
 ```haproxy
-global
-    log stdout format raw local0
-    maxconn 4096
-
 defaults
     mode http
     timeout connect 5s
-    timeout client 60s
-    timeout server 60s
-    option http-server-close
+    timeout client 50s
+    timeout server 50s
 
-frontend https_front
-    bind *:443 ssl crt /etc/haproxy/certs/relay.pem
+frontend fe_relay
+    bind :443 ssl crt /etc/certs/relay.example.com.pem alpn h2,http/1.1
+    bind :80
+    http-request redirect scheme https code 301 unless { ssl_fc }
+    http-request set-header X-Real-IP %[src]
+    http-request set-header X-Forwarded-For %[src]
+    default_backend relay
 
-    # Detect WebSocket
-    acl is_websocket hdr(Upgrade) -i websocket
-
-    # Route to relay backend
-    use_backend relay_backend if is_websocket
-    default_backend relay_backend
-
-backend relay_backend
-    # Enable WebSocket
-    option http-server-close
+backend relay
     timeout tunnel 1h
-
-    # Health check
-    option httpchk GET /
-
-    # Relay servers
-    server relay1 127.0.0.1:7777 check
-    server relay2 127.0.0.1:7778 check backup
+    server relay 127.0.0.1:7777
 ```
 
-## Traefik
+The nostr-rs-relay guide says Firefox can have WebSocket trouble over HTTP/2 on HAProxy 2.3 and older. Upgrade HAProxy, or drop `h2` from `alpn`.
 
-Modern edge router with Docker integration.
-
-### docker-compose.yml
-
-```yaml
-version: '3'
-
-services:
-  traefik:
-    image: traefik:v2.10
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--entrypoints.websecure.address=:443"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.email=admin@example.com"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-    ports:
-      - "443:443"
-      - "8080:8080"
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "./letsencrypt:/letsencrypt"
-
-  relay:
-    image: hoytech/strfry
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.relay.rule=Host(`relay.example.com`)"
-      - "traefik.http.routers.relay.entrypoints=websecure"
-      - "traefik.http.routers.relay.tls.certresolver=letsencrypt"
-      - "traefik.http.services.relay.loadbalancer.server.port=7777"
-```
-
-## Testing
-
-### Verify WebSocket
+## Check it works
 
 ```bash
-# Using websocat
-websocat wss://relay.example.com
+# NIP-11 document: JSON, not your website
+curl -H 'Accept: application/nostr+json' https://relay.example.com
 
-# Send test request
-["REQ", "test", {"limit": 1}]
+# WebSocket round trip
+nak event -c 'proxy test' wss://relay.example.com
+nak req -k 1 -l 1 wss://relay.example.com
 ```
 
-### Verify NIP-11
+:::tip
+Behind Cloudflare's proxy, your relay sees Cloudflare's IP. Read the `CF-Connecting-IP` header instead (nostr-rs-relay: `remote_ip_header = "cf-connecting-ip"`; nostream: `remoteIpHeader: cf-connecting-ip`).
+:::
 
-```bash
-curl -H "Accept: application/nostr+json" https://relay.example.com/
-```
-
-### Check SSL
-
-```bash
-openssl s_client -connect relay.example.com:443
-```
-
-## Common Issues
-
-### "502 Bad Gateway"
-
-- Relay not running on expected port
-- Check: `curl http://localhost:7777`
-
-### "WebSocket connection failed"
-
-- Missing upgrade headers
-- Check nginx/Caddy WebSocket configuration
-
-### "Certificate errors"
-
-- Wrong domain in certificate
-- Expired certificate
-- Check: `certbot certificates`
-
-## See Also
-
-- [Running a Relay](./running-a-relay)
-- [Configuration](./configuration)
-- [Hosting](./hosting)
+Traefik and more examples: [nostr-rs-relay docs/reverse-proxy.md](https://github.com/scsibug/nostr-rs-relay/blob/master/docs/reverse-proxy.md). Apache and HAVEN-specific setups: the [HAVEN README](https://github.com/barrydeen/haven).

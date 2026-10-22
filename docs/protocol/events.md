@@ -1,248 +1,221 @@
 ---
 sidebar_position: 2
 title: Events
-description: Understanding Nostr events in detail
+description: The Nostr event structure, how ids and signatures are computed, tags, and creating and verifying events in code
 ---
 
 # Events
 
-Events are the atomic unit of data in Nostr. Every piece of information—posts, profiles, reactions, follows—is represented as an event.
+An event is the only data type in Nostr. Posts, profiles, reactions, follow lists and relay lists are all events. This page is the canonical reference for the structure. The [NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md) spec has the last word.
 
-## Event Structure
+## Structure
+
+This is a real reply event, signed with the throwaway test key from [Keys and signing](../getting-started/keys-and-signing.md). You can check it yourself with `nak verify`.
 
 ```json
 {
-  "id": "4376c65d2f232afbe9b882a35baa4f6fe8667c4e684749af565f981833ed6a65",
-  "pubkey": "6e468422dfb74a5738702a8823b9b28168abab8655faacb6853cd0ee15deee93",
-  "created_at": 1673347337,
+  "id": "16c919ba88ee92164740ccc60d031eaf514ee4ee4cbe980a1ccbb944bb716c5e",
+  "pubkey": "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3",
+  "created_at": 1792650060,
   "kind": 1,
   "tags": [
-    ["e", "3da979448d9ba263864c4d6f14984c423a3838364ec255f03c7904b1ae77f206"],
-    ["p", "bf2376e17ba4ec269d10fcc996a4746b451152be9031fa48e74553dde5526bce"]
+    ["e", "3840c24f14afcc3682d145f3d8a5a8684a273294470f88c38827ad6ed035b569", "wss://relay.primal.net", "root", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3"],
+    ["p", "b0eac043f3e04418711b47c72d44481e3d6b1fde19202a2c0d9b4580f934c4f3"]
   ],
-  "content": "This is a reply to another note!",
-  "sig": "908a15e46fb4d8675bab026fc230a0e3542bfade63da02d542fb78b2a8513fcd..."
+  "content": "Replying to my own note.",
+  "sig": "b0f67c0852a3dcc41a480887d1be71b4fb9409ccf0df71abc61bccef3047b3089c90e7c3103323ca1468464e027c492ac1359540b089b523417c403ce32154d9"
 }
 ```
 
-### Field Details
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | 64-char lowercase hex | SHA-256 of the serialized event (below) |
+| `pubkey` | 64-char lowercase hex | The author's public key |
+| `created_at` | integer | Unix time in seconds, set by the author |
+| `kind` | integer, 0–65535 | What the event is. See [Event kinds](./kinds.md) |
+| `tags` | array of arrays of strings | Metadata and references |
+| `content` | string | The payload. Its meaning depends on the kind |
+| `sig` | 128-char lowercase hex | 64-byte BIP-340 Schnorr signature of the id |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | 32-byte lowercase hex SHA256 hash of the serialized event |
-| `pubkey` | string | 32-byte lowercase hex public key of the event creator |
-| `created_at` | integer | Unix timestamp in seconds |
-| `kind` | integer | Event type identifier (0-65535) |
-| `tags` | array | Array of arrays containing tag data |
-| `content` | string | Arbitrary string content (interpretation depends on kind) |
-| `sig` | string | 64-byte lowercase hex Schnorr signature |
+## The id and the signature
 
-## Computing the Event ID
+To get the `id`, serialize this array as JSON and take the SHA-256 of its UTF-8 bytes:
 
-The event ID is a SHA256 hash of the serialized event data:
-
-```javascript
-const serialized = JSON.stringify([
-  0,                    // Reserved for future use
-  event.pubkey,         // Author's public key
-  event.created_at,     // Unix timestamp
-  event.kind,           // Event kind
-  event.tags,           // Tags array
-  event.content         // Content string
-]);
-
-const id = sha256(serialized);
+```
+[0, <pubkey>, <created_at>, <kind>, <tags>, <content>]
 ```
 
-The serialization must follow these rules:
-- No whitespace
-- UTF-8 encoding
-- No escaping of Unicode characters
-- Numbers without quotes
+NIP-01's rules for the serialization:
 
-## Signing Events
+- UTF-8 encoding, and no whitespace or line breaks between tokens.
+- In strings, escape exactly these characters: line feed `\n`, double quote `\"`, backslash `\\`, carriage return `\r`, tab `\t`, backspace `\b`, form feed `\f`. Every other character goes in as-is (no `\uXXXX` escapes for non-ASCII text).
 
-Events are signed using Schnorr signatures (BIP-340):
+JavaScript's `JSON.stringify` follows these rules for any text without other control characters (U+0000–U+001F, which it writes as `\u00XX`). The `sig` is a Schnorr signature over the 32 id bytes.
 
-```javascript
-import { schnorr } from '@noble/curves/secp256k1';
+Your library does all of this for you. Here it is by hand, to show there's nothing hidden:
 
-const signature = schnorr.sign(eventId, privateKey);
+```bash
+npm i @noble/curves @noble/hashes
 ```
 
-The signature covers only the event ID (which is a hash of all other fields).
+```js
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js'
+import { schnorr } from '@noble/curves/secp256k1.js'
+
+const sk = schnorr.utils.randomSecretKey()
+const event = {
+  pubkey: bytesToHex(schnorr.getPublicKey(sk)),
+  created_at: Math.floor(Date.now() / 1000),
+  kind: 1,
+  tags: [['t', 'nostr']],
+  content: 'Hello, "Nostr"!\nSecond line ✨',
+}
+
+// NIP-01: sha256 over the UTF-8 bytes of this array, no whitespace
+const serialized = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content])
+const hash = sha256(utf8ToBytes(serialized))
+event.id = bytesToHex(hash)
+
+// BIP-340 Schnorr signature over the 32-byte id (bytes, not a hex string)
+event.sig = bytesToHex(schnorr.sign(hash, sk))
+
+console.log(schnorr.verify(hexToBytes(event.sig), hash, hexToBytes(event.pubkey)))
+// true
+```
+
+The result passes nostr-tools' `verifyEvent`. With @noble v2, import paths need the `.js` suffix, and `schnorr.sign` takes bytes: passing a hex string throws.
 
 ## Tags
 
-Tags are arrays of strings that add metadata to events.
+A tag is an array of strings. The first element is the tag **name**, the second its **value**, and the rest have meanings set per tag. Relays index every tag whose name is a single letter (`a`–`z`, `A`–`Z`), using its first value, so you can [filter](./filters.md) on them with `#e`, `#p`, `#t` and so on.
 
-### Standard Tag Types
+| Tag | Format | Meaning | Spec |
+|---|---|---|---|
+| `e` | `["e", <event id>, <relay hint>, <marker>, <author pubkey>]` | A referenced event. In kind 1 replies the marker is `root` or `reply` | [01](https://github.com/nostr-protocol/nips/blob/master/01.md), [10](https://github.com/nostr-protocol/nips/blob/master/10.md) |
+| `p` | `["p", <pubkey>, <relay hint>]` | A referenced user | [01](https://github.com/nostr-protocol/nips/blob/master/01.md) |
+| `a` | `["a", "<kind>:<pubkey>:<d>", <relay hint>]` | A referenced addressable or replaceable event (for replaceable kinds, `d` is empty: keep the trailing colon) | [01](https://github.com/nostr-protocol/nips/blob/master/01.md) |
+| `d` | `["d", <identifier>]` | The identifier of an addressable event | [01](https://github.com/nostr-protocol/nips/blob/master/01.md) |
+| `q` | `["q", <event id or address>, <relay hint>, <pubkey>]` | A quoted event (quote post) | [18](https://github.com/nostr-protocol/nips/blob/master/18.md) |
+| `t` | `["t", <hashtag>]` | A hashtag, lowercase | [24](https://github.com/nostr-protocol/nips/blob/master/24.md) |
+| `r` | `["r", <url>]` | A referenced URL (in kind 10002, a relay) | [24](https://github.com/nostr-protocol/nips/blob/master/24.md), [65](https://github.com/nostr-protocol/nips/blob/master/65.md) |
+| `k` | `["k", <kind>]` | The kind of a referenced event, as a string | [09](https://github.com/nostr-protocol/nips/blob/master/09.md), [25](https://github.com/nostr-protocol/nips/blob/master/25.md) |
+| `imeta` | `["imeta", "url …", "m …", …]` | Metadata for a media URL in the content | [92](https://github.com/nostr-protocol/nips/blob/master/92.md) |
+| `expiration` | `["expiration", <unix time>]` | Relays should drop the event after this time | [40](https://github.com/nostr-protocol/nips/blob/master/40.md) |
+| `nonce` | `["nonce", <nonce>, <target difficulty>]` | Proof of work | [13](https://github.com/nostr-protocol/nips/blob/master/13.md) |
+| `-` | `["-"]` | Protected: relays accept it only from the author, after AUTH | [70](https://github.com/nostr-protocol/nips/blob/master/70.md) |
 
-| Tag | Format | Description |
-|-----|--------|-------------|
-| `e` | `["e", "<event-id>", "<relay-url>", "<marker>"]` | Reference to another event |
-| `p` | `["p", "<pubkey>", "<relay-url>", "<petname>"]` | Reference to a user |
-| `a` | `["a", "<kind>:<pubkey>:<d-tag>", "<relay-url>"]` | Reference to replaceable event |
-| `d` | `["d", "<identifier>"]` | Identifier for replaceable events |
-| `t` | `["t", "<hashtag>"]` | Hashtag |
-| `r` | `["r", "<url>"]` | Reference to URL |
-| `nonce` | `["nonce", "<nonce>", "<target>"]` | Proof of work |
-| `subject` | `["subject", "<subject>"]` | Subject/title |
-| `expiration` | `["expiration", "<timestamp>"]` | Expiration time |
+Relay hints may be empty strings. The 4-element `p` tag with a petname, `["p", <pubkey>, <relay>, <petname>]`, belongs to kind 3 follow lists only ([NIP-02](https://github.com/nostr-protocol/nips/blob/master/02.md)).
 
-### Event Reference Markers
+### Replies
 
-The `e` tag can include markers for threading:
+[NIP-10](https://github.com/nostr-protocol/nips/blob/master/10.md) threads kind 1 notes with **marked** `e` tags:
 
-```json
-["e", "<event-id>", "<relay>", "root"]    // Thread root
-["e", "<event-id>", "<relay>", "reply"]   // Direct parent
-["e", "<event-id>", "<relay>", "mention"] // Mention (not a reply)
-```
+- A direct reply to the thread's first note: one `e` tag marked `root`.
+- A reply deeper in a thread: one `e` tag marked `root` (the first note) and one marked `reply` (the note being answered).
+- Copy the parent's `p` tags and add a `p` tag for the parent's author, so everyone in the thread is notified.
 
-### Example: Tagged Event
+Kind 1 replies are only for kind 1 notes. To comment on anything else (an article, a picture, a web page), use a kind 1111 comment ([NIP-22](https://github.com/nostr-protocol/nips/blob/master/22.md)).
 
-```json
-{
-  "kind": 1,
-  "content": "Check out this article!",
-  "tags": [
-    ["e", "abc123...", "wss://relay.example.com", "root"],
-    ["p", "def456...", "wss://relay.example.com"],
-    ["t", "nostr"],
-    ["t", "development"],
-    ["r", "https://example.com/article"]
-  ]
-}
-```
+The only markers are `root` and `reply`. To quote a note without replying to it, use a `q` tag and put the `nostr:nevent1…` reference in the content. Old clients sent unmarked, positional `e` tags. That form is deprecated: read it, but don't write it.
 
-## Event Categories
+The example at the top of this page is a direct reply.
 
-Events are categorized by how they should be stored:
+## Storage classes
 
-### Regular Events (most kinds)
+The kind number decides how relays store an event:
 
-Stored by relays as independent events. Multiple events of the same kind from the same author are all kept.
+- **Regular** (1, 2, 4–44, 1000–9999): every event is kept.
+- **Replaceable** (0, 3, 10000–19999): only the newest per author and kind.
+- **Ephemeral** (20000–29999): forwarded to subscribers, not stored.
+- **Addressable** (30000–39999): only the newest per author, kind and `d` tag. These used to be called "parameterized replaceable events".
 
-### Replaceable Events (kinds 0, 3, 10000-19999)
+When two replaceable events have the same `created_at`, the one with the lowest id wins. Details and examples are on [Event kinds](./kinds.md).
 
-Only the latest event (by `created_at`) is kept. Older events are discarded.
-
-```json
-{
-  "kind": 0,
-  "content": "{\"name\": \"Alice\", \"about\": \"Nostr developer\"}",
-  "created_at": 1700000000
-}
-```
-
-### Parameterized Replaceable Events (kinds 30000-39999)
-
-Like replaceable, but identified by both kind and `d` tag. Each unique `d` value is a separate replaceable.
-
-```json
-{
-  "kind": 30023,
-  "tags": [["d", "my-blog-post"]],
-  "content": "Long form article content...",
-  "created_at": 1700000000
-}
-```
-
-### Ephemeral Events (kinds 20000-29999)
-
-Should not be stored by relays. Used for real-time communication.
-
-```json
-{
-  "kind": 20001,
-  "content": "User is typing...",
-  "created_at": 1700000000
-}
-```
-
-## Creating Events in Code
+## Creating events
 
 ### JavaScript (nostr-tools)
 
-```javascript
-import { finalizeEvent, generateSecretKey } from 'nostr-tools/pure';
+```js
+import { finalizeEvent, generateSecretKey } from 'nostr-tools/pure'
 
-const sk = generateSecretKey();
-
+const sk = generateSecretKey()
 const event = finalizeEvent({
   kind: 1,
   created_at: Math.floor(Date.now() / 1000),
-  tags: [
-    ['t', 'nostr'],
-    ['p', 'recipientPubkey']
-  ],
-  content: 'Hello, Nostr!'
-}, sk);
+  tags: [['t', 'nostr']],
+  content: 'Hello, Nostr!',
+}, sk)
 
-console.log(event);
-// { id, pubkey, created_at, kind, tags, content, sig }
+console.log(event)
+// { kind, created_at, tags, content, pubkey, id, sig }
 ```
 
-### Rust (nostr-sdk)
+In a browser app, pass the same template to `window.nostr.signEvent()` instead of holding a key. See [Keys and signing](../getting-started/keys-and-signing.md).
+
+### Python (nostr-sdk)
+
+```python
+from nostr_sdk import EventBuilder, Keys, Kind, KindStandard, Tag
+
+keys = Keys.generate()
+event = (
+    EventBuilder(kind=Kind.from_std(KindStandard.TEXT_NOTE), content="Hello, Nostr!")
+    .tags([Tag.hashtag("nostr")])
+    .finalize(keys)
+)
+print(event.as_json())
+print(event.verify())
+# True
+```
+
+### Rust (nostr 0.45)
 
 ```rust
 use nostr::prelude::*;
 
-let keys = Keys::generate();
-let event = EventBuilder::text_note("Hello, Nostr!")
-    .tags([Tag::hashtag("nostr")])
-    .sign_with_keys(&keys)?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let keys = Keys::generate();
 
-println!("{}", event.as_json());
-```
+    let event: Event = EventBuilder::new(Kind::TextNote, "Hello, Nostr!")
+        .tag(Tag::hashtag("nostr"))
+        .finalize(&keys)?;
+    println!("{}", event.as_json());
 
-### Python (pynostr)
-
-```python
-from nostr.event import Event
-from nostr.key import PrivateKey
-
-private_key = PrivateKey()
-
-event = Event(
-    kind=1,
-    content="Hello, Nostr!",
-    tags=[["t", "nostr"]]
-)
-event.sign(private_key.hex())
-
-print(event.to_message())
-```
-
-## Verifying Events
-
-Always verify events before trusting them:
-
-```javascript
-import { verifyEvent } from 'nostr-tools/pure';
-
-if (verifyEvent(event)) {
-  console.log('Valid event');
-} else {
-  console.log('Invalid signature or ID');
+    // check id and signature
+    event.verify()?;
+    Ok(())
 }
 ```
 
-Verification checks:
-1. Event ID matches the hash of serialized data
-2. Signature is valid for the claimed public key
+Add the crate with `cargo add nostr --features os-rng`. Older tutorials use `EventBuilder::text_note(…)`, `sign_with_keys` and `Client::new(keys)`. None of these exist in 0.45.
 
-## Best Practices
+### Command line (nak)
 
-1. **Always verify** incoming events before processing
-2. **Use appropriate kinds** for your content type
-3. **Include relay hints** in `e` and `p` tags when possible
-4. **Set reasonable timestamps** - don't backdate or future-date events
-5. **Use markers** for replies to enable proper threading
+```bash
+# NOSTR_SECRET_KEY must be set; otherwise nak signs with a machine-default key
+nak event -k 1 -c "Hello, Nostr!" -t t=nostr ws://localhost:10547
+```
 
-## See Also
+All four were run in October 2026 (nostr-tools 2.25.2, nostr-sdk 0.45.1, nostr 0.45.5, nak 0.21.2).
 
-- [Event Kinds Reference](./kinds)
-- [Working with Filters](./filters)
-- [NIPs Specification](./nips)
+## Verifying events
+
+Check every event you receive. A relay can send you anything.
+
+```js
+import { verifyEvent } from 'nostr-tools/pure'
+
+if (!verifyEvent(event)) {
+  // wrong id or bad signature: drop it
+}
+```
+
+`verifyEvent` recomputes the id from the other fields and checks the signature against `pubkey`. nostr-tools' `SimplePool` runs it on every incoming event by default. Keep it that way. From the command line, `echo '<event json>' | nak verify` does the same.
+
+## Good habits
+
+- Use the right kind for the content. Don't put a new data type in kind 1.
+- Add relay hints to `e`, `p` and `a` tags when you know where the referenced event lives.
+- Use the current time for `created_at`. Many relays reject events too far in the past or future.
+- Never edit a signed event. Change it and you must sign it again, which gives a new id.

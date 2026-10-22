@@ -1,349 +1,128 @@
 ---
 sidebar_position: 3
 title: Developer Tools
-description: Tools for Nostr development and debugging
+description: Command-line, browser and testing tools for Nostr development, checked October 2026
 ---
 
 # Developer Tools
 
-This page covers tools that help you build, test, and debug Nostr applications.
+The tools Nostr developers actually use in October 2026, and what each is for. Commands were run with nak v0.21.2. For full cheat-sheets, see the wiki pages linked from each section.
 
-## Command Line Tools
+`🟢 active · 🟡 quiet (6–12 months) · 🔴 archived or dead · checked Oct 2026`
 
-### nak
+## Command line
 
-Swiss army knife for Nostr.
+### nak 🟢
 
-- **Repository:** [github.com/fiatjaf/nak](https://github.com/fiatjaf/nak)
+[nak](https://github.com/fiatjaf/nak) is the Nostr army knife: one binary that makes keys, signs and publishes events, queries relays, decodes NIP-19 codes, runs a throwaway relay, acts as a NIP-46 bunker and signs NIP-98 HTTP requests.
 
-**Install:**
 ```bash
+# Linux / macOS: downloads the latest release binary
+curl -sSL https://raw.githubusercontent.com/fiatjaf/nak/master/install.sh | sh
+
+# or, with Go
 go install github.com/fiatjaf/nak@latest
 ```
 
-**Usage:**
-```bash
-# Generate keys
-nak key generate
-nak key public <nsec>
-
-# Fetch events
-nak req -k 1 -l 10 wss://relay.damus.io
-
-# Publish event
-echo '{"kind":1,"content":"Hello!"}' | nak event wss://relay.damus.io
-
-# Decode NIP-19
-nak decode npub1...
-
-# Verify event
-cat event.json | nak verify
-```
-
-### nostril
-
-Simple event creator.
-
-- **Repository:** [github.com/jb55/nostril](https://github.com/jb55/nostril)
+The everyday commands:
 
 ```bash
-# Create and sign a note
-nostril --sec <hex-secret> --content "Hello Nostr"
+# a throwaway key; nak reads NOSTR_SECRET_KEY, so it never goes on the command line
+export NOSTR_SECRET_KEY=$(nak key generate)
+echo "$NOSTR_SECRET_KEY" | nak key public
 
-# Create with envelope for relay
-nostril --sec <hex-secret> --envelope --content "Hello" | websocat wss://relay.damus.io
+# a local in-memory relay on ws://localhost:10547 (run in its own terminal)
+nak serve
+
+# publish, then read back
+nak event -c 'hello' ws://localhost:10547
+nak req -k 1 -l 3 ws://localhost:10547
+
+# read from public relays
+nak req -k 1 -l 3 wss://relay.primal.net wss://relay.nostr.net
+
+# decode npub, nevent, nprofile, naddr… to hex and relay hints
+nak decode npub1xtscya34g58tk0z605fvr788k263gsu6cy9x0mhnm87echrgufzsevkk5s
+
+# a relay's NIP-11 info document
+nak relay wss://relay.primal.net
+
+# check an event's id and signature (exit code 0 if valid)
+nak verify < event.json
+
+# offline reference: a kind's schema, a NIP's text
+nak kind 10050
+nak nip 17
 ```
 
-### nostr-tools CLI
+:::tip
+In scripts and `while read` loops, nak reads stdin whenever it isn't a terminal. Add `</dev/null` to `nak event` and `nak req` there, or it swallows your input.
+:::
 
-CLI from nostr-tools package.
+Full reference: the wiki's [nak](https://github.com/nostrcg/devguide/wiki/NAK) page. Multi-step recipes with `jq`: [Snippets](https://github.com/nostrcg/devguide/wiki/Snippets).
+
+### websocat 🟢
+
+[websocat](https://github.com/vi/websocat) is a generic WebSocket client. Use it to see the raw relay messages, exactly as the relay sends them:
 
 ```bash
-npx nostr-tools generate-key
-npx nostr-tools sign-event <event.json>
+echo '["REQ","x",{"kinds":[1],"limit":2}]' | timeout 5 websocat -n wss://relay.primal.net
 ```
 
-## Browser Extensions
+More on the wiki's [websocat](https://github.com/nostrcg/devguide/wiki/Websocat) page.
 
-### Alby
+### Others
 
-Lightning + Nostr browser extension.
+- [nostril](https://github.com/jb55/nostril) 🟡: a small C tool that creates and signs events. Last commit Dec 2025.
+- 🔴 [nostcat](https://github.com/blakejakopovic/nostcat): no commits since 2023. Use nak.
 
-- **Website:** [getalby.com](https://getalby.com)
-- **Browsers:** Chrome, Firefox, Safari
+:::caution Keys from the command line
+Use `nak key generate` for test keys. `openssl rand -hex 32` can, very rarely, produce a value that isn't a valid secp256k1 key. Don't generate BIP-39 mnemonics (NIP-06): the NIPs now recommend a single key. To store a key encrypted, use NIP-49 (`ncryptsec`): `nak key encrypt`. See [Key Management](../guides/key-management.md).
+:::
 
-**Features:**
-- NIP-07 signing
-- Lightning wallet
-- Budget controls
-- Multiple accounts
+## In the browser
 
-### nos2x
+| Tool | What it does |
+|---|---|
+| [nak web](https://nak.nostr.com) | Decode, encode, sign and publish in the browser, with your NIP-07 extension |
+| [njump.me](https://njump.me) ([source](https://github.com/fiatjaf/njump)) | Renders any `npub`, `nevent` or `naddr` as a static web page; good for checking what you published |
+| [Hello World](https://nostrapps.github.io/helloworld/hello.html) | A one-button page that calls `window.nostr.getPublicKey()`: checks that an extension works |
 
-Minimal Nostr signing extension.
+For signer extensions, bunkers and Android signers, and which are still maintained, see the wiki's [Signers & login](https://github.com/nostrcg/devguide/wiki/Extensions) page.
 
-- **Repository:** [github.com/fiatjaf/nos2x](https://github.com/fiatjaf/nos2x)
-- **Browsers:** Chrome, Firefox
+## Testing
 
-**Features:**
-- Lightweight
-- Pure NIP-07
-- Open source
+| Need | Tool |
+|---|---|
+| A throwaway relay for development | `nak serve` (above); `nak serve --help` lists options for AUTH, negentropy and Blossom |
+| A relay inside your test process | Rust `MockRelay` ([Rust](../libraries/rust.md#test-against-an-in-process-relay)) or a khatru relay ([Go](../libraries/go.md)) |
+| A NIP-01 compliance suite for a relay you are writing | [relay-tester](https://github.com/mikedilger/relay-tester) 🟡: point it at a fresh, empty relay, never a live one. It takes two throwaway keys |
+| Checking a relay against the NIPs it advertises | `@nostrwatch/auditor` in [nostr-watch](https://github.com/sandwichfarm/nostr-watch) (alpha) |
+| JSON schemas for event kinds, to validate what you publish | [nostrability/schemata](https://github.com/nostrability/schemata) 🟡 |
+| A production relay (strfry, nostr-rs-relay…) | See [Running a Relay](../relays/running-a-relay.md) |
 
-### Flamingo
+More on test setups: [Testing](../guides/testing.md).
 
-Full-featured Nostr extension.
+## Monitoring relays
 
-- **Website:** [getflamingo.org](https://getflamingo.org)
+- [nostr.watch](https://nostr.watch) shows relay status, built on NIP-66.
+- **api.nostr.watch v1 is dead** (502). v2 charges per request (L402 or Cashu).
+- The free way is to read NIP-66 monitor events (kind 30166) directly from relays. The wiki's [Relay Explorers](https://github.com/nostrcg/devguide/wiki/Relay-Explorers) page has tested queries, and [Relay Explorers](../relays/explorers.md) covers the sites.
 
-**Features:**
-- NIP-07 signing
-- NIP-44 encryption
-- Multiple keys
+## Reference
 
-## Testing Tools
+- [nostr-protocol/nips](https://github.com/nostr-protocol/nips): the specs. The README has the full kind and tag tables.
+- [nostrbook.dev](https://nostrbook.dev): searchable kinds, tags and NIPs.
+- `nak kind <n>` and `nak nip <n>` work offline.
 
-### WebSocket Test Clients
+## Gone
 
-#### websocat
+Don't use these; older guides still mention them.
 
-CLI WebSocket client.
-
-```bash
-# Install
-cargo install websocat
-
-# Connect to relay
-websocat wss://relay.damus.io
-
-# Send subscription
-["REQ","test",{"kinds":[1],"limit":5}]
-```
-
-#### wscat
-
-Node.js WebSocket client.
-
-```bash
-npm install -g wscat
-
-wscat -c wss://relay.damus.io
-> ["REQ","sub1",{"kinds":[1],"limit":3}]
-```
-
-### Relay Testing
-
-#### nostr-relay-tester
-
-Test relay NIP compliance.
-
-```bash
-npx nostr-relay-tester wss://relay.example.com
-```
-
-#### relay-tools
-
-Relay inspection utilities.
-
-```bash
-# Check relay info
-curl -H "Accept: application/nostr+json" https://relay.example.com/
-
-# Test connection
-websocat wss://relay.example.com/ -n
-```
-
-## Development Environments
-
-### Local Relay for Testing
-
-Run a local relay for development:
-
-```bash
-# Using strfry
-docker run -p 7777:7777 hoytech/strfry
-
-# Using nostream
-docker run -p 7777:7777 cameri/nostream
-```
-
-### Mock Relay
-
-For unit testing:
-
-```javascript
-import { createMockRelay } from 'nostr-tools/mock';
-
-const relay = createMockRelay();
-// Returns events you've injected
-```
-
-## Debugging
-
-### Event Inspector
-
-Paste events to decode:
-
-```javascript
-// Browser console
-const event = JSON.parse('{"id":"...","pubkey":"..."}');
-
-// Decode pubkey
-import { nip19 } from 'nostr-tools';
-console.log(nip19.npubEncode(event.pubkey));
-
-// Verify signature
-import { verifyEvent } from 'nostr-tools/pure';
-console.log(verifyEvent(event));
-```
-
-### Network Debugging
-
-Chrome DevTools:
-1. Open Network tab
-2. Filter by WS (WebSocket)
-3. Click connection to see messages
-
-Firefox:
-1. Open Network tab
-2. Filter by WS
-3. View Messages panel
-
-### Common Debug Patterns
-
-```javascript
-// Log all relay messages
-relay.onmessage = (msg) => {
-  console.log('Received:', JSON.parse(msg.data));
-};
-
-// Track subscriptions
-const subs = new Map();
-function subscribe(id, filter) {
-  console.log(`Subscribe ${id}:`, filter);
-  subs.set(id, filter);
-}
-```
-
-## Key Management
-
-### Key Generation
-
-```bash
-# Using nak
-nak key generate
-
-# Using openssl
-openssl rand -hex 32
-```
-
-### Bech32 Encoding
-
-```bash
-# Encode pubkey to npub
-echo "pubkey-hex" | nak encode npub
-
-# Decode npub to hex
-nak decode npub1...
-```
-
-### Mnemonic (BIP-39)
-
-```javascript
-import { generateMnemonic, mnemonicToEntropy } from '@scure/bip39';
-import { wordlist } from '@scure/bip39/wordlists/english';
-
-const mnemonic = generateMnemonic(wordlist);
-console.log(mnemonic);
-// witch collapse practice feed shame open despair creek road again ice least
-```
-
-## API Tools
-
-### Nostr.band API
-
-Query aggregated Nostr data.
-
-```bash
-# Search notes
-curl "https://api.nostr.band/v0/search?q=bitcoin&limit=10"
-
-# Get trending
-curl "https://api.nostr.band/v0/trending/notes"
-
-# Get profile
-curl "https://api.nostr.band/v0/p/npub1..."
-```
-
-### Primal API
-
-Cached Nostr data access.
-
-```bash
-curl "https://primal.net/api/feed/latest"
-```
-
-## Monitoring
-
-### nostr.watch
-
-- **Website:** [nostr.watch](https://nostr.watch)
-
-**Features:**
-- Relay uptime monitoring
-- NIP support detection
-- Performance metrics
-
-### Relay Stats
-
-Track your relay's metrics:
-
-```bash
-# Prometheus endpoint (if supported)
-curl http://localhost:7777/metrics
-
-# Relay info
-curl -H "Accept: application/nostr+json" http://localhost:7777/
-```
-
-## Useful Utilities
-
-### Event ID Calculation
-
-```javascript
-import { getEventHash } from 'nostr-tools/pure';
-
-const event = {
-  pubkey: '...',
-  created_at: Math.floor(Date.now() / 1000),
-  kind: 1,
-  tags: [],
-  content: 'test'
-};
-
-const id = getEventHash(event);
-```
-
-### NIP-05 Verification
-
-```bash
-# Check NIP-05 identifier
-curl "https://example.com/.well-known/nostr.json?name=alice"
-```
-
-### Relay List Discovery
-
-```javascript
-// Get user's relay list (NIP-65)
-const filter = {
-  kinds: [10002],
-  authors: [pubkey],
-  limit: 1
-};
-```
-
-## See Also
-
-- [Libraries Overview](../libraries/overview)
-- [Testing Guide](../guides/testing)
-- [Nostr Clients](./clients)
+| Tool | Status |
+|---|---|
+| nostr.band search, API and relay | 🔴 unreachable since early October 2026 |
+| `primal.net/api/...` HTTP endpoints | Not an API: they return the web app. Primal's cache speaks its own WebSocket protocol |
+| `npx nostr-tools …` CLI | Never existed; nostr-tools is a library only |
+| `nostr-relay-tester` (npm), `nostr-tools/mock` | Don't exist |
+| nsecBunker (`nsecbunkerd`) | 🔴 repo wiped in June 2026 |

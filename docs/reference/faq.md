@@ -1,295 +1,169 @@
 ---
 sidebar_position: 4
 title: FAQ
-description: Frequently asked questions about Nostr development
+description: Short answers to common Nostr development questions, with links to the full pages
 ---
 
 # Frequently Asked Questions
 
-Common questions about Nostr development.
+Short answers, each with a link to the page that covers the topic in full.
 
 ## General
 
 ### What is Nostr?
 
-Nostr (Notes and Other Stuff Transmitted by Relays) is a simple, open protocol for decentralized social networking. It uses cryptographic keys for identity and relays for message distribution.
-
-### How is Nostr different from ActivityPub/Mastodon?
-
-| Aspect | Nostr | ActivityPub |
-|--------|-------|-------------|
-| Identity | Cryptographic keys | Server accounts |
-| Portability | Full (take keys anywhere) | Limited (server-dependent) |
-| Complexity | Simple JSON events | Complex protocol |
-| Servers | Dumb relays | Smart servers |
-| Censorship | Hard (many relays) | Easy (server admin) |
+An open protocol. Users sign JSON events with their own keys and publish them to relays, which are simple servers that store
+and forward events. Clients read from whichever relays they like. See [Introduction](../getting-started/introduction.md).
 
 ### Is Nostr encrypted?
 
-By default, events are public. Encryption is available via:
-- NIP-04 (deprecated)
-- NIP-44 (recommended)
-- NIP-59 (gift wrap)
+Events are public by default. For private messages, use [NIP-17](https://github.com/nostr-protocol/nips/blob/master/17.md):
+the message is encrypted with [NIP-44](https://github.com/nostr-protocol/nips/blob/master/44.md) and wrapped in a
+[NIP-59](https://github.com/nostr-protocol/nips/blob/master/59.md) gift wrap (kind `1059`), which also hides who is talking
+to whom. NIP-04 (kind `4`) is unrecommended: it leaks metadata and has weaker encryption. Read it only for old messages.
 
 ### Can I delete my posts?
 
-You can publish deletion requests (kind 5), but relays are not required to honor them. Treat anything published as potentially permanent.
+You can publish a kind `5` deletion request ([NIP-09](https://github.com/nostr-protocol/nips/blob/master/09.md)). Relays
+and clients may honor it, but nothing forces them to, and copies may already exist elsewhere. Treat anything you publish as
+permanent. [NIP-62](https://github.com/nostr-protocol/nips/blob/master/62.md) "request to vanish" asks relays to drop
+everything from a key.
 
-## Keys & Identity
+### Where is the full list of NIPs and kinds?
 
-### What happens if I lose my private key?
+[NIP Index](nip-index.md) and [Event Kinds](event-kinds.md), both generated from the NIPs repository. The NIPs README is
+the source.
 
-There is no recovery mechanism. Your identity and all associated data are lost. Always maintain secure backups.
+## Keys and identity
+
+### What if I lose my secret key?
+
+It's gone. There is no reset. Back it up, ideally encrypted with
+[NIP-49](https://github.com/nostr-protocol/nips/blob/master/49.md) (`ncryptsec1…`). See
+[Key Management](../guides/key-management.md).
 
 ### Can I change my key?
 
-You can migrate to a new key by:
-1. Announcing the migration from your old key
-2. Having followers re-follow your new key
-3. There's no automatic migration
+Not in a way the protocol understands. You publish from the new key, tell people from the old one, and they re-follow.
 
-### Should I use the same key everywhere?
+### How should my app get the user's key?
 
-Consider using different keys for:
-- Main identity (maximum security)
-- Testing/development (less critical)
-- Bots/automation (isolated)
+Don't ask for it. Let the user sign with a signer they control:
 
-### How do NIP-07 extensions work?
+- [NIP-07](https://github.com/nostr-protocol/nips/blob/master/07.md) browser extension (`window.nostr`). Required methods are
+  `getPublicKey()` and `signEvent()`. `nip44.encrypt`/`nip44.decrypt` are optional; the `nip04` methods are deprecated.
+- [NIP-46](https://github.com/nostr-protocol/nips/blob/master/46.md) remote signer (a "bunker"), which works from any platform.
+- [NIP-55](https://github.com/nostr-protocol/nips/blob/master/55.md) Android signer app, such as Amber.
 
-Browser extensions like Alby and nos2x:
-1. Store your private key securely
-2. Provide `window.nostr` API
-3. Sign events when requested
-4. Never expose your key to websites
+The wiki's [Signers & login](https://github.com/nostrcg/devguide/wiki/Extensions) page has tested code and a list of
+signers that are maintained.
 
-## Events & Protocol
+## Events
 
-### What's the maximum event size?
+### How big can an event be?
 
-Varies by relay, typically 64KB-1MB. Check relay's NIP-11 info:
-```json
-"limitation": {
-  "max_content_length": 65535
-}
+It depends on the relay. Its [NIP-11](relay-info.md) document may list `limitation.max_message_length` (bytes in one
+WebSocket message, which caps the whole event) and `max_content_length` (characters in `content`). Relays that don't
+publish limits may still enforce them.
+
+### Can I edit an event?
+
+No. An event's id is a hash of its pubkey, `created_at`, kind, tags and content, and the signature covers the id. What you can do depends on the kind:
+
+- **Replaceable** (`0`, `3`, `10000`–`19999`): publish a newer one; relays keep the latest per pubkey and kind.
+- **Addressable** (`30000`–`39999`): publish a newer one with the same `d` tag.
+- **Regular**: publish a correction, or delete and repost.
+
+Ranges are in [Event Kinds](event-kinds.md#kind-ranges).
+
+### Why doesn't my event show up?
+
+Check the relay's `OK` reply. It says `true` or `false`, plus a message whose prefix explains a rejection: `invalid:`,
+`pow:`, `blocked:`, `rate-limited:`, `restricted:`, `mute:`, `auth-required:` or `error:`. A `duplicate:` message comes with
+`true`: the relay already has the event.
+
+In nostr-tools, `pool.publish()` returns **an array of promises**, one per relay. Await them together:
+
+```js
+import { SimplePool } from 'nostr-tools/pool'
+import { finalizeEvent, generateSecretKey, verifyEvent } from 'nostr-tools/pure'
+
+const sk = generateSecretKey()
+const event = finalizeEvent(
+  { kind: 1, created_at: Math.floor(Date.now() / 1000), tags: [], content: 'hello' },
+  sk,
+)
+console.log('valid locally:', verifyEvent(event))
+
+const relays = ['ws://localhost:10547', 'ws://localhost:10548']
+const pool = new SimplePool()
+
+const results = await Promise.allSettled(pool.publish(relays, event))
+results.forEach((r, i) =>
+  console.log(relays[i], r.status === 'fulfilled' ? `ok: ${r.value}` : `failed: ${r.reason}`),
+)
+pool.close(relays)
 ```
 
-### How long are events stored?
+Tested with nostr-tools 2.25.2 and two `nak serve` relays. A rejected or unreachable relay shows up as `failed`. Use
+`Promise.any(...)` when one success is enough.
 
-Depends on relay policy:
-- Some keep everything
-- Some limit by age (e.g., 30 days)
-- Some limit by count per pubkey
-- Ephemeral kinds (20000-29999) aren't stored
+Also check that the client reads from the relays you wrote to. Most clients read a user's notes from their
+[NIP-65](https://github.com/nostr-protocol/nips/blob/master/65.md) write relays (kind `10002`).
 
-### Can I edit events?
-
-Events are immutable. For updates:
-- Replaceable events (kind 0, 3, 10000-19999): publish new version
-- Parameterized replaceable (30000-39999): publish with same `d` tag
-- Regular events: publish correction and reference original
-
-### Why are my events not appearing?
+### My filter returns nothing
 
 Common causes:
-1. Invalid signature
-2. Relay policy rejection
-3. Rate limiting
-4. Relay not storing that kind
-5. Network/connection issues
 
-Debug steps:
-```javascript
-// Verify event locally
-console.log(verifyEvent(event));
+- `ids`, `authors` and `#e`/`#p` values must be exact 64-character lowercase hex. Prefixes and npubs don't match.
+- An empty list such as `"authors": []` matches nothing.
+- The relay never saw the event, or clamps `limit` to its `max_limit`.
 
-// Check relay response
-pool.publish([relay], event).then(result => {
-  console.log('Publish result:', result);
-});
-```
+See [Filters](../protocol/filters.md).
 
 ## Relays
 
-### How many relays should I use?
-
-Recommendations:
-- **Minimum:** 3 for redundancy
-- **Typical:** 5-10 for good reach
-- **Maximum:** Consider performance impact
-
 ### Which relays should I use?
 
-Start with popular public relays:
-- wss://relay.damus.io
-- wss://nos.lol
-- wss://relay.nostr.band
+For a user, the relays in their kind `10002` list. For defaults in examples and tests, these answered well in October 2026:
+`wss://relay.primal.net`, `wss://relay.nostr.net` and `wss://nos.lol`, plus `wss://purplepag.es` for looking up profiles
+and relay lists. For tests that write, run `nak serve` locally (`ws://localhost:10547`).
 
-Then add based on:
-- Your region
-- Your community
-- Special features needed
+Relays come and go. Check current status with the tools in [Relay Explorers](../relays/explorers.md) before you hard-code one.
 
-### Why do I need multiple relays?
+### How many relays should a client use?
 
-- **Redundancy:** If one goes down, others work
-- **Reach:** Different relays have different users
-- **Privacy:** Don't reveal all activity to one party
-- **Speed:** Geographic distribution
+Write to the user's own write relays. To read someone's notes, use their write relays (the "outbox" model). This scales
+better than connecting everyone to the same handful of big relays. See [Building Clients](../guides/building-clients.md).
+
+### Does SimplePool reconnect for me?
+
+Not reliably. nostr-tools 2.x has an `enableReconnect` option, but in our October 2026 test (2.25.2) a subscription was closed, not resumed, when its relay restarted. Resubscribe yourself with a `since` filter: see the tested wrapper in [Relay communication](../protocol/relay-communication.md).
+
+### How do I check what a relay supports?
+
+Fetch its NIP-11 document and read `supported_nips` and `limitation`. Code is in [Relay Information](relay-info.md).
+Only relay-side NIPs belong there; features such as zaps live in clients and wallets, not relays.
 
 ### How do I run my own relay?
 
-See [Running a Relay](../relays/running-a-relay). Quick start:
-```bash
-docker run -p 7777:7777 hoytech/strfry
-```
+See [Running a Relay](../relays/running-a-relay.md) and [Relay Implementations](../relays/implementations.md).
 
 ## Development
 
 ### Which library should I use?
 
-| Language | Recommendation |
-|----------|---------------|
-| JavaScript | nostr-tools |
-| Rust | nostr-sdk |
-| Python | pynostr or nostr-sdk bindings |
-| Go | go-nostr |
+See [Libraries](../libraries/overview.md). In short: nostr-tools for JavaScript and TypeScript, Nostr Dev Kit (formerly
+rust-nostr) for Rust and its bindings, `nostr-sdk` for Python, and `fiatjaf.com/nostr` for Go (go-nostr is archived).
 
-### How do I test without affecting production?
+### How do I test without touching real users?
 
-1. Run a local relay for testing
-2. Use test keys (never production keys)
-3. Use test relays when available
+Use throwaway keys and a local relay: `nak serve` starts one in memory. See [Testing](../guides/testing.md) and
+[Command Snippets](snippets.md).
 
-### How do I handle rate limits?
+## Getting help
 
-```javascript
-class RateLimiter {
-  constructor(maxRequests, windowMs) {
-    this.max = maxRequests;
-    this.window = windowMs;
-    this.requests = [];
-  }
-
-  async acquire() {
-    const now = Date.now();
-    this.requests = this.requests.filter(t => now - t < this.window);
-
-    if (this.requests.length >= this.max) {
-      const waitTime = this.window - (now - this.requests[0]);
-      await new Promise(r => setTimeout(r, waitTime));
-    }
-
-    this.requests.push(Date.now());
-  }
-}
-```
-
-### How do I implement NIP-07 fallback?
-
-```javascript
-async function sign(event) {
-  if (window.nostr) {
-    return window.nostr.signEvent(event);
-  }
-  // Fallback to local key
-  if (localSecretKey) {
-    return finalizeEvent(event, localSecretKey);
-  }
-  throw new Error('No signing method available');
-}
-```
-
-## Common Errors
-
-### "Invalid signature"
-
-Causes:
-- Signing with wrong key
-- Event modified after signing
-- Incorrect serialization
-
-Fix: Verify event creation process:
-```javascript
-const event = finalizeEvent({...}, secretKey);
-console.log(verifyEvent(event)); // Should be true
-```
-
-### "Duplicate event"
-
-The same event ID was already received. This is normal for publishing to multiple relays. Handle gracefully:
-```javascript
-if (message.startsWith('duplicate')) {
-  // Not an error
-  return;
-}
-```
-
-### "Rate limited"
-
-Slow down your requests. Implement backoff:
-```javascript
-async function publishWithRetry(event, maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await pool.publish(relays, event);
-    } catch (e) {
-      if (e.message.includes('rate')) {
-        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
-      } else throw e;
-    }
-  }
-}
-```
-
-### "Connection closed"
-
-WebSocket disconnected. Implement reconnection:
-```javascript
-function createReconnectingPool() {
-  const pool = new SimplePool();
-  // SimplePool handles reconnection automatically
-  return pool;
-}
-```
-
-## NIPs
-
-### Which NIPs are required?
-
-Only NIP-01 is truly required. In practice, also implement:
-- NIP-02 (follows)
-- NIP-10 (threading)
-- NIP-19 (bech32)
-
-### How do I check if a relay supports a NIP?
-
-```javascript
-const info = await getRelayInfo(relayUrl);
-const supportsZaps = info.supported_nips?.includes(57);
-```
-
-### Where do I find NIP specifications?
-
-Official repository: [github.com/nostr-protocol/nips](https://github.com/nostr-protocol/nips)
-
-## Getting Help
-
-### Where can I ask questions?
-
-- [W3C Nostr Community Group](https://www.w3.org/community/nostr/)
-- GitHub issues on relevant repos
-- Nostr itself (using Nostr clients)
-- [nostr.how](https://nostr.how)
-
-### Where can I report bugs?
-
-- Library bugs: Library's GitHub
-- Protocol issues: [NIPs repo](https://github.com/nostr-protocol/nips)
-- Client bugs: Client's GitHub
-
-## See Also
-
-- [Getting Started](../getting-started/introduction)
-- [Protocol Overview](../protocol/overview)
-- [Libraries Overview](../libraries/overview)
+- NIP discussions: [nostr-protocol/nips](https://github.com/nostr-protocol/nips) issues and pull requests
+- This guide: [nostrcg/devguide](https://github.com/nostrcg/devguide) issues, and the
+  [wiki](https://github.com/nostrcg/devguide/wiki)
+- Bugs in a library or relay: that project's own issue tracker
